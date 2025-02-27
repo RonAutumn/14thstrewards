@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LoadingSpinner } from "@/components/ui/loading-spinner";
+import { Button } from "@/components/ui/button";
+import { Separator } from "@/components/ui/separator";
 
 const NAV_ITEMS = [
   { href: "/admin", label: "Dashboard" },
@@ -19,26 +20,23 @@ export function AdminNav() {
   return (
     <aside className="w-64 bg-card border-r border-border">
       <div className="p-6">
-        <h2 className="text-lg font-semibold text-card-foreground">
-          Admin Dashboard
-        </h2>
+        <h2 className="text-lg font-semibold text-primary">Admin Dashboard</h2>
+        <Separator className="my-4" />
       </div>
       <nav className="px-4 space-y-2">
         {NAV_ITEMS.map((item) => (
-          <Link
+          <Button
             key={item.href}
-            href={item.href}
-            prefetch={false}
-            className={`block px-4 py-2 rounded-md transition-colors ${
-              pathname === item.href
-                ? "bg-accent text-accent-foreground"
-                : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-            }`}
+            variant={pathname === item.href ? "secondary" : "ghost"}
+            className="w-full justify-start"
+            asChild
           >
-            {item.label}
-          </Link>
+            <Link href={item.href} prefetch={false}>
+              {item.label}
+            </Link>
+          </Button>
         ))}
       </nav>
     </aside>
   );
-} 
+}

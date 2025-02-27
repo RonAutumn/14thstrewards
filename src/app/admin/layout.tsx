@@ -2,7 +2,9 @@ import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { cookies } from "next/headers";
-import AdminSidebar from "@/components/admin/AdminSidebar";
+import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Separator } from "@/components/ui/separator";
 import LoadingSpinner from "@/components/ui/LoadingSpinner";
 
 async function getServerSideAuth() {
@@ -98,9 +100,36 @@ export default async function AdminLayout({
   }
 
   return (
-    <div className="flex h-screen bg-gray-100">
-      {auth.isAuthenticated && auth.isAdmin && <AdminSidebar />}
-      <div className="flex-1 overflow-auto">
+    <div className="flex h-screen bg-background">
+      {auth.isAuthenticated && auth.isAdmin && (
+        <div className="w-64 border-r border-border bg-card p-4">
+          <h2 className="mb-4 text-xl font-semibold text-primary">
+            Admin Dashboard
+          </h2>
+          <Separator className="mb-4" />
+          <nav className="space-y-2">
+            <Button variant="ghost" className="w-full justify-start" asChild>
+              <a href="/admin">Dashboard</a>
+            </Button>
+            <Button variant="ghost" className="w-full justify-start" asChild>
+              <a href="/admin/delivery">Delivery Management</a>
+            </Button>
+            <Button variant="ghost" className="w-full justify-start" asChild>
+              <a href="/admin/shipping">Shipping Management</a>
+            </Button>
+            <Button variant="ghost" className="w-full justify-start" asChild>
+              <a href="/admin/pickup">Pickup Management</a>
+            </Button>
+            <Button variant="ghost" className="w-full justify-start" asChild>
+              <a href="/admin/store-management">Store Management</a>
+            </Button>
+            <Button variant="ghost" className="w-full justify-start" asChild>
+              <a href="/admin/rewards">Rewards Management</a>
+            </Button>
+          </nav>
+        </div>
+      )}
+      <div className="flex-1 overflow-auto p-6">
         <Suspense
           fallback={
             <div className="flex h-screen items-center justify-center">
