@@ -1,0 +1,25 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+Rule Name: mcp
+Description: Rules for using Model Context Protocol with Postgres
+alwaysApply: true
+---
+# MCP Database Access Instructions
+
+When working with database tables or needing to view table structures, always use the Model Context Protocol (MCP) server with the following connection:
+
+```bash
+node C:\Users\Rijka\AppData\Roaming\npm\node_modules\@modelcontextprotocol\server-postgres\dist\index.js postgresql://postgres:V4RDCqhjNXhEM588@db.vfjtwzpkfhrfdlbltbpj.supabase.co:5432/postgres
+```
+
+To view tables and data:
+1. Use the `mcp__query` tool for executing SQL queries
+2. Common queries:
+   - List all tables: `SELECT table_name FROM information_schema.tables WHERE table_schema = 'public';`
+   - View table structure: `SELECT column_name, data_type FROM information_schema.columns WHERE table_name = '<table_name>';`
+   - View table contents: `SELECT * FROM <table_name>;`
+
+Note: Always use the `mcp__query` tool for database operations to ensure proper connection handling. 

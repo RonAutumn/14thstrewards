@@ -1,0 +1,5 @@
+---
+description: globs: ["**/*.env*", "src/lib/auth/**/*"]
+globs: ["**/*.env*", "src/lib/auth/**/*"]
+---
+ 

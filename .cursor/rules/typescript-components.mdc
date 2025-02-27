@@ -1,0 +1,28 @@
+---
+description: Rules for TypeScript component development
+globs: ["src/components/**/*.tsx", "src/features/**/*.tsx"]
+---
+
+# Component Development Rules
+
+1. Base Component Patterns:
+   - Use `React.forwardRef` for all base components
+   - Include proper type definitions with ComponentPropsWithoutRef
+   - Follow the naming convention: Base{ComponentName} for base components
+   - Use `cn()` utility for className merging
+
+2. Props Interface Rules:
+   - Define interfaces with proper naming: {ComponentName}Props
+   - Extend HTML element props when appropriate
+   - Include optional className prop
+   - Document complex props with JSDoc comments
+
+3. Variant Handling:
+   - Use class-variance-authority (cva) for component variants
+   - Define variants in separate const above component
+   - Export variant types if needed by other components
+
+4. Component Organization:
+   - Keep related components in same file if tightly coupled
+   - Split into separate files if component grows beyond 100 lines
+   - Export all variants and subcomponents from index file

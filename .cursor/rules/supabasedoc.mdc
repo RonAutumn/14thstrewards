@@ -1,0 +1,28 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+{
+  "name": "supabase",
+  "description": "Rules for working with Supabase integration",
+  "globs": ["**/supabase.md", "**/auth/**/*", "**/*.supabase.*"],
+  "instructions": [
+    "Follow Supabase best practices for authentication and database operations",
+    "Ensure proper environment variable handling for Supabase configuration",
+    "Reference the supabase.md documentation for implementation details",
+    "Use appropriate error handling for Supabase operations",
+    "Follow security best practices when working with Supabase service role keys",
+    "Maintain consistent authentication flows as documented",
+    "Keep documentation up to date with any Supabase-related changes"
+  ],
+  "references": {
+    "documentation": "/docs/supabase.md",
+    "auth_callback": "/auth/callback/route.ts",
+    "environment_vars": [
+      "NEXT_PUBLIC_SUPABASE_URL",
+      "NEXT_PUBLIC_SUPABASE_ANON_KEY",
+      "SUPABASE_SERVICE_ROLE_KEY"
+    ]
+  }
+} 
