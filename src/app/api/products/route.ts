@@ -1,9 +1,10 @@
 import { NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/server'
 import type { Product } from '@/types/product'
 
 export async function GET() {
   try {
+    const supabase = createAdminClient();
     const { data: products, error } = await supabase
       .from('products')
       .select('*')
@@ -43,6 +44,7 @@ export async function GET() {
 
 export async function PATCH(request: Request) {
   try {
+    const supabase = createAdminClient();
     const body = await request.json();
     console.log('PATCH /api/products - Request body:', body);
 
@@ -111,6 +113,7 @@ export async function PATCH(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    const supabase = createAdminClient();
     const body = await request.json();
     console.log('POST /api/products - Request body:', body);
 

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/server';
 import type { Category } from '@/types/product';
 
 // Add dynamic flag to prevent static optimization
@@ -7,6 +7,7 @@ export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
+    const supabase = createAdminClient();
     const { data: categories, error } = await supabase
       .from('categories')
       .select('*')
@@ -41,6 +42,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    const supabase = createAdminClient();
     const body = await request.json();
     console.log('POST /api/categories - Request body:', body);
 
@@ -86,6 +88,7 @@ export async function POST(request: Request) {
 
 export async function PATCH(request: Request) {
   try {
+    const supabase = createAdminClient();
     const body = await request.json();
     
     if (!body.id) {
