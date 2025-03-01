@@ -9,56 +9,124 @@ export type Json =
 export interface Database {
   public: {
     Tables: {
-      profiles: {
+      points_multipliers: {
         Row: {
           id: string
-          email: string
-          points: number
-          membership_level: string
+          multiplier: number
+          start_date: string
+          end_date: string
+          description: string
+          is_active: boolean
           created_at: string
           updated_at: string
         }
         Insert: {
-          id: string
-          email: string
-          points?: number
-          membership_level?: string
+          id?: string
+          multiplier: number
+          start_date: string
+          end_date: string
+          description: string
+          is_active?: boolean
           created_at?: string
           updated_at?: string
         }
         Update: {
           id?: string
-          email?: string
-          points?: number
-          membership_level?: string
+          multiplier?: number
+          start_date?: string
+          end_date?: string
+          description?: string
+          is_active?: boolean
           created_at?: string
           updated_at?: string
+        }
+      }
+      points_multiplier_rules: {
+        Row: {
+          id: string
+          multiplier: number
+          rule_name: string
+          product_category: string[]
+          minimum_purchase: number
+          is_active: boolean
+          start_date: string
+          end_date: string
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          multiplier: number
+          rule_name: string
+          product_category: string[]
+          minimum_purchase: number
+          is_active?: boolean
+          start_date: string
+          end_date: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          multiplier?: number
+          rule_name?: string
+          product_category?: string[]
+          minimum_purchase?: number
+          is_active?: boolean
+          start_date?: string
+          end_date?: string
+          created_at?: string
+          updated_at?: string
+        }
+      }
+      tiers: {
+        Row: {
+          id: string
+          tier_id: string
+          name: string
+          level: number
+          points_threshold: number
+          benefits: Json
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          tier_id: string
+          name: string
+          level: number
+          points_threshold: number
+          benefits?: Json
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          tier_id?: string
+          name?: string
+          level?: number
+          points_threshold?: number
+          benefits?: Json
+          created_at?: string
+          updated_at?: string
+        }
+      }
+      profiles: {
+        Row: {
+          id: string
+          user_id: string
+          current_tier_id: string
+          points: number
+          created_at: string
+          updated_at: string
         }
       }
       points_history: {
         Row: {
           id: string
-          profile_id: string
-          points: number
-          type: 'earned' | 'redeemed'
-          description: string
+          user_id: string
+          points_earned: number
           created_at: string
-        }
-        Insert: {
-          id?: string
-          profile_id: string
-          points: number
-          type: 'earned' | 'redeemed'
-          description: string
-          created_at?: string
-        }
-        Update: {
-          id?: string
-          profile_id?: string
-          points?: number
-          type?: 'earned' | 'redeemed'
-          description?: string
-          created_at?: string
         }
       }
       orders: {
@@ -119,83 +187,6 @@ export interface Database {
           updated_at?: string
         }
       }
-      tiers: {
-        Row: {
-          id: string
-          name: string
-          level: number
-          points_threshold: number
-          benefits: {
-            point_multiplier: number
-            discount_percentage: number
-            free_shipping: boolean
-            priority_support: boolean
-            early_access: boolean
-            exclusive_events: boolean
-            birthday_bonus: number
-            referral_bonus: number
-            custom_benefits: string[]
-          }
-          progression_requirements: {
-            min_purchase_count: number
-            min_total_spent: number
-            min_days_active: number
-            additional_requirements: string[]
-          }
-          created_at: string
-          updated_at: string
-        }
-        Insert: {
-          id: string
-          name: string
-          level: number
-          points_threshold: number
-          benefits: {
-            point_multiplier: number
-            discount_percentage: number
-            free_shipping: boolean
-            priority_support: boolean
-            early_access: boolean
-            exclusive_events: boolean
-            birthday_bonus: number
-            referral_bonus: number
-            custom_benefits: string[]
-          }
-          progression_requirements: {
-            min_purchase_count: number
-            min_total_spent: number
-            min_days_active: number
-            additional_requirements: string[]
-          }
-          created_at?: string
-          updated_at?: string
-        }
-        Update: {
-          id?: string
-          name?: string
-          level?: number
-          points_threshold?: number
-          benefits?: {
-            point_multiplier?: number
-            discount_percentage?: number
-            free_shipping?: boolean
-            priority_support?: boolean
-            early_access?: boolean
-            exclusive_events?: boolean
-            birthday_bonus?: number
-            referral_bonus?: number
-            custom_benefits?: string[]
-          }
-          progression_requirements?: {
-            min_purchase_count?: number
-            min_total_spent?: number
-            min_days_active?: number
-            additional_requirements?: string[]
-          }
-          created_at?: string
-          updated_at?: string
-        }
-      }
       tier_history: {
         Row: {
           id: string
@@ -235,6 +226,8 @@ export interface Database {
   }
 }
 
+export type PointsMultiplier = Database['public']['Tables']['points_multipliers']['Row']
+export type PointsMultiplierRule = Database['public']['Tables']['points_multiplier_rules']['Row']
 export type Profile = Database['public']['Tables']['profiles']['Row']
 export type PointsHistory = Database['public']['Tables']['points_history']['Row']
 export type Order = Database['public']['Tables']['orders']['Row']

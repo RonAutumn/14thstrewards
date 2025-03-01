@@ -69,4 +69,32 @@ export async function POST(request: Request) {
       details: error instanceof Error ? error.message : 'Unknown error'
     }, { status: 500 })
   }
+}
+
+// GET /api/rewards/transactions
+export async function GET() {
+  try {
+    const supabase = createRouteHandlerClient<Database>({ cookies: () => cookies() })
+
+    const { data: transactions, error } = await supabase
+      .from('transactions')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(100)
+
+    if (error) {
+      throw error
+    }
+
+    return NextResponse.json({
+      success: true,
+      transactions
+    })
+  } catch (error) {
+    console.error('Failed to fetch transactions:', error)
+    return NextResponse.json({
+      error: 'Failed to fetch transactions',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    }, { status: 500 })
+  }
 } 

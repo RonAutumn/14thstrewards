@@ -15,6 +15,7 @@ export interface OrderItem {
   pointsCost: number;
   unitPrice: number;
   weight: number;
+  options?: Record<string, any>;
 }
 
 // Base interface for common order properties
@@ -58,15 +59,23 @@ export interface ShippingOrder extends BaseOrder {
   shippingFee: number;
 }
 
-export interface DeliveryOrder extends BaseOrder {
+export interface DeliveryOrder {
+  id: string;
+  orderId: string;
+  customerName: string;
+  customerEmail: string;
+  customerPhone: string;
   deliveryAddress: string;
   city: string;
-  state: string;
-  zipCode: string;
-  paymentMethod: string;
-  type: 'delivery';
-  deliveryDate?: string;
   deliveryInstructions?: string;
+  deliveryDate: string;
+  deliveryTimeSlot: string;
+  items: OrderItem[];
+  total: number;
+  status: "pending" | "processing" | "completed" | "cancelled";
+  paymentStatus: "pending" | "paid" | "failed";
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface PickupOrder extends BaseOrder {

@@ -1,10 +1,12 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { cookies } from 'next/headers'
 
 // GET /api/rewards
 export async function GET(request: Request) {
   try {
-    const supabase = createClient()
+    const cookieStore = cookies();
+    const supabase = createClient(cookieStore);
     const { searchParams } = new URL(request.url)
     const tier = searchParams.get('tier')
 
@@ -19,7 +21,13 @@ export async function GET(request: Request) {
 
     const { data: rewards, error } = await query
 
-    if (error) throw error
+    if (error) {
+      console.error('Supabase error fetching rewards:', error)
+      return NextResponse.json({
+        success: false,
+        error: error.message
+      }, { status: 500 })
+    }
 
     return NextResponse.json({
       success: true,
@@ -29,7 +37,7 @@ export async function GET(request: Request) {
     console.error('Failed to fetch rewards:', error)
     return NextResponse.json({
       success: false,
-      error: 'Failed to fetch rewards'
+      error: error instanceof Error ? error.message : 'Failed to fetch rewards'
     }, { status: 500 })
   }
 }
@@ -37,16 +45,18 @@ export async function GET(request: Request) {
 // POST /api/rewards
 export async function POST(request: Request) {
   try {
-    const supabase = createClient()
+    const cookieStore = cookies();
+    const supabase = createClient(cookieStore);
     const data = await request.json()
     
     const reward = {
       ...data,
-      reward_id: `reward${Date.now()}`,
+      reward_id: data.reward_id || `reward${Date.now()}`,
       available_for_tiers: data.available_for_tiers || ['Bronze', 'Silver', 'Gold', 'Platinum'],
       is_active: true,
       created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
+      updated_at: new Date().toISOString(),
+      has_reward_codes: data.has_reward_codes || false
     }
 
     const { data: insertedReward, error } = await supabase
@@ -55,7 +65,13 @@ export async function POST(request: Request) {
       .select()
       .single()
 
-    if (error) throw error
+    if (error) {
+      console.error('Supabase error creating reward:', error)
+      return NextResponse.json({
+        success: false,
+        error: error.message
+      }, { status: 500 })
+    }
 
     return NextResponse.json({
       success: true,
@@ -65,7 +81,7 @@ export async function POST(request: Request) {
     console.error('Failed to create reward:', error)
     return NextResponse.json({
       success: false,
-      error: 'Failed to create reward'
+      error: error instanceof Error ? error.message : 'Failed to create reward'
     }, { status: 500 })
   }
 } 

@@ -1,13 +1,15 @@
-import React from 'react';
+import React from "react";
+import { cn } from "@/lib/utils";
 
 interface LayoutProps {
   children: React.ReactNode;
+  className?: string;
 }
 
-const Layout: React.FC<LayoutProps> = ({ children }) => {
+const Layout: React.FC<LayoutProps> = ({ children, className }) => {
   return (
-    <main className="container mx-auto px-4 pt-24 pb-8">
-      {children}
+    <main className={cn("min-h-screen flex flex-col", className)}>
+      <div className="flex-grow">{children}</div>
     </main>
   );
 };

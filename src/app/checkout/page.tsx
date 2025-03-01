@@ -42,7 +42,7 @@ import type { Address } from "@/types/address";
 import { RateSelector } from "@/components/shipping/rate-selector";
 import type { ShippingRate } from "@/types/shipping";
 import { Badge } from "@/components/ui/badge";
-import { supabaseClient } from "@/lib/supabase/client";
+import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { rewardsService } from "@/features/rewards/rewards.service";
 import { addItem, removeItem } from "@/lib/store/cart";
 import { DeliveryCalendar } from "@/components/delivery/delivery-calendar";
@@ -286,34 +286,38 @@ export default function CheckoutPage() {
   useEffect(() => {
     // Check if user is logged in and fetch their rewards
     const fetchUserAndRewards = async () => {
-      const {
-        data: { user },
-      } = await supabaseClient.auth.getUser();
-      if (user) {
-        setUser(user);
-        try {
-          // Fetch points and rewards separately to handle errors independently
+      try {
+        const {
+          data: { user },
+        } = await getSupabaseBrowserClient().auth.getUser();
+        if (user) {
+          setUser(user);
           try {
-            const points = await rewardsService.getUserPoints(user.id);
-            setUserPoints(points);
-          } catch (error) {
-            console.error("Failed to fetch user points:", error);
-            setUserPoints(0); // Default to 0 points if fetch fails
-          }
+            // Fetch points and rewards separately to handle errors independently
+            try {
+              const points = await rewardsService.getUserPoints(user.id);
+              setUserPoints(points);
+            } catch (error) {
+              console.error("Failed to fetch user points:", error);
+              setUserPoints(0); // Default to 0 points if fetch fails
+            }
 
-          try {
-            const rewards = await rewardsService.getAvailableRewards(user.id);
-            setAvailableRewards(rewards);
+            try {
+              const rewards = await rewardsService.getAvailableRewards(user.id);
+              setAvailableRewards(rewards);
+            } catch (error) {
+              console.error("Failed to fetch rewards:", error);
+              setAvailableRewards([]); // Default to empty rewards if fetch fails
+            }
           } catch (error) {
-            console.error("Failed to fetch rewards:", error);
-            setAvailableRewards([]); // Default to empty rewards if fetch fails
+            console.error("Failed to fetch rewards data:", error);
+            // Set default values
+            setUserPoints(0);
+            setAvailableRewards([]);
           }
-        } catch (error) {
-          console.error("Failed to fetch rewards data:", error);
-          // Set default values
-          setUserPoints(0);
-          setAvailableRewards([]);
         }
+      } catch (error) {
+        console.error("Error fetching user:", error);
       }
     };
 

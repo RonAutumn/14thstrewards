@@ -8,15 +8,30 @@ if (!env.NEXT_PUBLIC_SUPABASE_URL || !env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
   throw new Error('Missing required Supabase environment variables');
 }
 
-// Create a typed client for use in components
-export const createTypedClientComponentClient = () => {
-  return createClientComponentClient<Database>({
-    supabaseUrl: env.NEXT_PUBLIC_SUPABASE_URL,
-    supabaseKey: env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-  });
-};
+// Create a singleton instance
+let browserClient: ReturnType<typeof createClientComponentClient<Database>> | null = null;
 
 // Export a function to get the browser client
 export const getSupabaseBrowserClient = () => {
-  return createTypedClientComponentClient();
+  if (!browserClient) {
+    browserClient = createClientComponentClient<Database>({
+      supabaseUrl: env.NEXT_PUBLIC_SUPABASE_URL,
+      supabaseKey: env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+      options: {
+        auth: {
+          persistSession: true,
+          autoRefreshToken: true,
+          detectSessionInUrl: true
+        },
+        cookies: {
+          name: 'sb-auth',
+          lifetime: 60 * 60 * 24 * 7, // 7 days
+          domain: typeof window !== 'undefined' ? window.location.hostname : 'localhost',
+          path: '/',
+          sameSite: 'lax'
+        }
+      }
+    });
+  }
+  return browserClient;
 }; 

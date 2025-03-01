@@ -31,6 +31,7 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { TierManagement } from "@/components/rewards/TierManagement";
+import { Badge } from "@/components/ui/badge";
 
 interface User {
   _id: string;
@@ -119,14 +120,21 @@ interface Transaction {
 
 const PointsMultiplierSection = () => {
   const [multipliers, setMultipliers] = useState<any[]>([]);
+  const [rules, setRules] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [formType, setFormType] = useState<"multiplier" | "rule">("multiplier");
   const [formData, setFormData] = useState({
+    type: "multiplier",
     multiplier: 2,
     startDate: "",
     endDate: "",
     description: "",
     isActive: true,
+    // Rule specific fields
+    ruleName: "",
+    productCategory: [],
+    minimumPurchase: 0,
   });
 
   useEffect(() => {
@@ -135,10 +143,11 @@ const PointsMultiplierSection = () => {
 
   const fetchMultipliers = async () => {
     try {
-      const response = await fetch("/api/rewards/points-multipliers");
+      const response = await fetch("/api/rewards/multipliers");
       const data = await response.json();
       if (data.success) {
-        setMultipliers(data.data);
+        setMultipliers(data.data.multipliers);
+        setRules(data.data.rules);
       }
     } catch (error) {
       console.error("Error fetching multipliers:", error);
@@ -150,7 +159,7 @@ const PointsMultiplierSection = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const response = await fetch("/api/rewards/points-multipliers", {
+      const response = await fetch("/api/rewards/multipliers", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(formData),
@@ -159,40 +168,20 @@ const PointsMultiplierSection = () => {
       if (data.success) {
         setShowAddModal(false);
         fetchMultipliers();
+        setFormData({
+          type: "multiplier",
+          multiplier: 2,
+          startDate: "",
+          endDate: "",
+          description: "",
+          isActive: true,
+          ruleName: "",
+          productCategory: [],
+          minimumPurchase: 0,
+        });
       }
     } catch (error) {
       console.error("Error creating multiplier:", error);
-    }
-  };
-
-  const handleDelete = async (id: string) => {
-    if (!confirm("Are you sure you want to delete this multiplier?")) return;
-    try {
-      const response = await fetch(`/api/rewards/points-multipliers?id=${id}`, {
-        method: "DELETE",
-      });
-      const data = await response.json();
-      if (data.success) {
-        fetchMultipliers();
-      }
-    } catch (error) {
-      console.error("Error deleting multiplier:", error);
-    }
-  };
-
-  const handleToggleActive = async (id: string, currentStatus: boolean) => {
-    try {
-      const response = await fetch("/api/rewards/points-multipliers", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id, isActive: !currentStatus }),
-      });
-      const data = await response.json();
-      if (data.success) {
-        fetchMultipliers();
-      }
-    } catch (error) {
-      console.error("Error updating multiplier:", error);
     }
   };
 
@@ -203,109 +192,228 @@ const PointsMultiplierSection = () => {
         <Button onClick={() => setShowAddModal(true)}>Add Multiplier</Button>
       </div>
 
-      <div className="rounded-md border">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Multiplier</TableHead>
-              <TableHead>Date Range</TableHead>
-              <TableHead>Description</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {isLoading ? (
+      <Tabs defaultValue="global" className="w-full">
+        <TabsList>
+          <TabsTrigger value="global">Global Multipliers</TabsTrigger>
+          <TabsTrigger value="rules">Rule-Based Multipliers</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="global">
+          <Table>
+            <TableHeader>
               <TableRow>
-                <TableCell colSpan={5} className="text-center py-4">
-                  Loading...
-                </TableCell>
+                <TableHead>Multiplier</TableHead>
+                <TableHead>Date Range</TableHead>
+                <TableHead>Description</TableHead>
+                <TableHead>Status</TableHead>
               </TableRow>
-            ) : multipliers.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={5} className="text-center py-4">
-                  No multipliers found
-                </TableCell>
-              </TableRow>
-            ) : (
-              multipliers.map((multiplier) => (
-                <TableRow key={multiplier._id}>
-                  <TableCell>{multiplier.multiplier}x</TableCell>
-                  <TableCell>
-                    {new Date(multiplier.startDate).toLocaleDateString()} -{" "}
-                    {new Date(multiplier.endDate).toLocaleDateString()}
-                  </TableCell>
-                  <TableCell>{multiplier.description}</TableCell>
-                  <TableCell>
-                    <Button
-                      variant={multiplier.isActive ? "default" : "secondary"}
-                      onClick={() =>
-                        handleToggleActive(multiplier._id, multiplier.isActive)
-                      }
-                    >
-                      {multiplier.isActive ? "Active" : "Inactive"}
-                    </Button>
-                  </TableCell>
-                  <TableCell>
-                    <Button
-                      variant="destructive"
-                      onClick={() => handleDelete(multiplier._id)}
-                    >
-                      Delete
-                    </Button>
+            </TableHeader>
+            <TableBody>
+              {isLoading ? (
+                <TableRow>
+                  <TableCell colSpan={4} className="text-center py-4">
+                    Loading...
                   </TableCell>
                 </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-      </div>
+              ) : multipliers.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={4} className="text-center py-4">
+                    No multipliers found
+                  </TableCell>
+                </TableRow>
+              ) : (
+                multipliers.map((multiplier) => (
+                  <TableRow key={multiplier.id}>
+                    <TableCell>{multiplier.multiplier}x</TableCell>
+                    <TableCell>
+                      {new Date(multiplier.start_date).toLocaleDateString()} -{" "}
+                      {new Date(multiplier.end_date).toLocaleDateString()}
+                    </TableCell>
+                    <TableCell>{multiplier.description}</TableCell>
+                    <TableCell>
+                      <Badge
+                        variant={multiplier.is_active ? "default" : "secondary"}
+                      >
+                        {multiplier.is_active ? "Active" : "Inactive"}
+                      </Badge>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </TabsContent>
 
-      {showAddModal && (
-        <Dialog open={showAddModal} onOpenChange={setShowAddModal}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Add Points Multiplier</DialogTitle>
-            </DialogHeader>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <Label>Multiplier</Label>
-                <Input
-                  type="number"
-                  min="1"
-                  step="0.1"
-                  value={formData.multiplier}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      multiplier: parseFloat(e.target.value),
-                    })
-                  }
-                  required
-                />
-              </div>
-              <div>
-                <Label>Start Date</Label>
-                <Input
-                  type="date"
-                  value={formData.startDate}
-                  onChange={(e) =>
-                    setFormData({ ...formData, startDate: e.target.value })
-                  }
-                  required
-                />
-              </div>
-              <div>
-                <Label>End Date</Label>
-                <Input
-                  type="date"
-                  value={formData.endDate}
-                  onChange={(e) =>
-                    setFormData({ ...formData, endDate: e.target.value })
-                  }
-                  required
-                />
-              </div>
+        <TabsContent value="rules">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Rule Name</TableHead>
+                <TableHead>Multiplier</TableHead>
+                <TableHead>Categories</TableHead>
+                <TableHead>Min. Purchase</TableHead>
+                <TableHead>Date Range</TableHead>
+                <TableHead>Status</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {isLoading ? (
+                <TableRow>
+                  <TableCell colSpan={6} className="text-center py-4">
+                    Loading...
+                  </TableCell>
+                </TableRow>
+              ) : rules.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={6} className="text-center py-4">
+                    No rules found
+                  </TableCell>
+                </TableRow>
+              ) : (
+                rules.map((rule) => (
+                  <TableRow key={rule.id}>
+                    <TableCell>{rule.rule_name}</TableCell>
+                    <TableCell>{rule.multiplier}x</TableCell>
+                    <TableCell>
+                      {Array.isArray(rule.product_category)
+                        ? rule.product_category.join(", ")
+                        : rule.product_category}
+                    </TableCell>
+                    <TableCell>${rule.minimum_purchase}</TableCell>
+                    <TableCell>
+                      {new Date(rule.start_date).toLocaleDateString()} -{" "}
+                      {new Date(rule.end_date).toLocaleDateString()}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={rule.is_active ? "default" : "secondary"}>
+                        {rule.is_active ? "Active" : "Inactive"}
+                      </Badge>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </TabsContent>
+      </Tabs>
+
+      <Dialog open={showAddModal} onOpenChange={setShowAddModal}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add Points Multiplier</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <Label>Type</Label>
+              <Select
+                value={formData.type}
+                onValueChange={(value: "multiplier" | "rule") => {
+                  setFormData((prev) => ({ ...prev, type: value }));
+                  setFormType(value);
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="multiplier">Global Multiplier</SelectItem>
+                  <SelectItem value="rule">Rule-Based Multiplier</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <Label>Multiplier</Label>
+              <Input
+                type="number"
+                min="1"
+                step="0.1"
+                value={formData.multiplier}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    multiplier: parseFloat(e.target.value),
+                  })
+                }
+                required
+              />
+            </div>
+
+            {formType === "rule" && (
+              <>
+                <div>
+                  <Label>Rule Name</Label>
+                  <Input
+                    type="text"
+                    value={formData.ruleName}
+                    onChange={(e) =>
+                      setFormData({ ...formData, ruleName: e.target.value })
+                    }
+                    required
+                  />
+                </div>
+                <div>
+                  <Label>Product Categories (comma-separated)</Label>
+                  <Input
+                    type="text"
+                    value={
+                      Array.isArray(formData.productCategory)
+                        ? formData.productCategory.join(", ")
+                        : ""
+                    }
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        productCategory: e.target.value
+                          .split(",")
+                          .map((cat) => cat.trim()),
+                      })
+                    }
+                    required
+                  />
+                </div>
+                <div>
+                  <Label>Minimum Purchase ($)</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={formData.minimumPurchase}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        minimumPurchase: parseFloat(e.target.value),
+                      })
+                    }
+                    required
+                  />
+                </div>
+              </>
+            )}
+
+            <div>
+              <Label>Start Date</Label>
+              <Input
+                type="date"
+                value={formData.startDate}
+                onChange={(e) =>
+                  setFormData({ ...formData, startDate: e.target.value })
+                }
+                required
+              />
+            </div>
+            <div>
+              <Label>End Date</Label>
+              <Input
+                type="date"
+                value={formData.endDate}
+                onChange={(e) =>
+                  setFormData({ ...formData, endDate: e.target.value })
+                }
+                required
+              />
+            </div>
+            {formType === "multiplier" && (
               <div>
                 <Label>Description</Label>
                 <Input
@@ -316,20 +424,21 @@ const PointsMultiplierSection = () => {
                   }
                 />
               </div>
-              <div className="flex justify-end gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setShowAddModal(false)}
-                >
-                  Cancel
-                </Button>
-                <Button type="submit">Add</Button>
-              </div>
-            </form>
-          </DialogContent>
-        </Dialog>
-      )}
+            )}
+
+            <div className="flex justify-end gap-4">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setShowAddModal(false)}
+              >
+                Cancel
+              </Button>
+              <Button type="submit">Add</Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
@@ -406,11 +515,19 @@ export default function AdminRewardsPage() {
 
       const data = await response.json();
 
-      if (!Array.isArray(data.rewards)) {
-        throw new Error("Invalid response format: rewards is not an array");
-      }
+      // Ensure rewards is always an array and each reward has required properties
+      const rewardsArray = Array.isArray(data.rewards)
+        ? data.rewards.map((reward) => ({
+            ...reward,
+            availableForTiers: reward.availableForTiers || [],
+            isActive: reward.isActive ?? true,
+            pointsCost: reward.pointsCost || 0,
+            description: reward.description || "",
+            hasRewardCodes: reward.hasRewardCodes || false,
+          }))
+        : [];
 
-      setRewards(data.rewards);
+      setRewards(rewardsArray);
     } catch (error) {
       console.error("Failed to load rewards:", error);
       toast({
@@ -418,6 +535,7 @@ export default function AdminRewardsPage() {
         description: "Failed to load rewards. Please try again later.",
         variant: "destructive",
       });
+      // Set rewards to empty array on error
       setRewards([]);
     } finally {
       setIsLoading(false);
@@ -1054,6 +1172,30 @@ export default function AdminRewardsPage() {
   };
 
   const renderRewardsTable = () => {
+    if (isLoading) {
+      return (
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Name</TableHead>
+              <TableHead>Description</TableHead>
+              <TableHead>Points Cost</TableHead>
+              <TableHead>Available Tiers</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            <TableRow>
+              <TableCell colSpan={6} className="text-center py-4">
+                Loading...
+              </TableCell>
+            </TableRow>
+          </TableBody>
+        </Table>
+      );
+    }
+
     return (
       <Table>
         <TableHeader>
@@ -1067,71 +1209,82 @@ export default function AdminRewardsPage() {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {rewards.map((reward) => (
-            <TableRow key={reward._id}>
-              <TableCell>{reward.name}</TableCell>
-              <TableCell>{reward.description}</TableCell>
-              <TableCell>{reward.pointsCost}</TableCell>
-              <TableCell>
-                <div className="flex flex-wrap gap-1">
-                  {reward.availableForTiers.map((tier) => (
-                    <span
-                      key={tier}
-                      className={`px-2 py-1 rounded text-xs ${
-                        tier === "Platinum"
-                          ? "bg-purple-100 text-purple-800"
-                          : tier === "Gold"
-                          ? "bg-yellow-100 text-yellow-800"
-                          : tier === "Silver"
-                          ? "bg-gray-100 text-gray-800"
-                          : "bg-amber-100 text-amber-800"
-                      }`}
-                    >
-                      {tier}
-                    </span>
-                  ))}
-                </div>
-              </TableCell>
-              <TableCell>
-                <Button
-                  variant={reward.isActive ? "default" : "secondary"}
-                  onClick={() =>
-                    handleToggleRewardStatus(reward.reward_id, !reward.isActive)
-                  }
-                >
-                  {reward.isActive ? "Active" : "Inactive"}
-                </Button>
-              </TableCell>
-              <TableCell>
-                <div className="flex space-x-2">
-                  <Button
-                    variant="outline"
-                    onClick={() => handleEditClick(reward)}
-                  >
-                    Edit
-                  </Button>
-                  <Button
-                    variant="destructive"
-                    onClick={() => handleDeleteReward(reward.reward_id)}
-                  >
-                    Delete
-                  </Button>
-                  {reward.hasRewardCodes && (
-                    <Button
-                      variant="outline"
-                      onClick={() => {
-                        setSelectedRewardId(reward.reward_id);
-                        setActiveTab("codes");
-                        loadRewardCodes(reward.reward_id);
-                      }}
-                    >
-                      View Codes
-                    </Button>
-                  )}
-                </div>
+          {!rewards || rewards.length === 0 ? (
+            <TableRow>
+              <TableCell colSpan={6} className="text-center py-4">
+                No rewards found
               </TableCell>
             </TableRow>
-          ))}
+          ) : (
+            rewards.map((reward) => (
+              <TableRow key={reward._id}>
+                <TableCell>{reward.name}</TableCell>
+                <TableCell>{reward.description}</TableCell>
+                <TableCell>{reward.pointsCost}</TableCell>
+                <TableCell>
+                  <div className="flex flex-wrap gap-1">
+                    {(reward.availableForTiers || []).map((tier) => (
+                      <span
+                        key={tier}
+                        className={`px-2 py-1 rounded text-xs ${
+                          tier === "Platinum"
+                            ? "bg-purple-100 text-purple-800"
+                            : tier === "Gold"
+                            ? "bg-yellow-100 text-yellow-800"
+                            : tier === "Silver"
+                            ? "bg-gray-100 text-gray-800"
+                            : "bg-amber-100 text-amber-800"
+                        }`}
+                      >
+                        {tier}
+                      </span>
+                    ))}
+                  </div>
+                </TableCell>
+                <TableCell>
+                  <Button
+                    variant={reward.isActive ? "default" : "secondary"}
+                    onClick={() =>
+                      handleToggleRewardStatus(
+                        reward.reward_id,
+                        !reward.isActive
+                      )
+                    }
+                  >
+                    {reward.isActive ? "Active" : "Inactive"}
+                  </Button>
+                </TableCell>
+                <TableCell>
+                  <div className="flex space-x-2">
+                    <Button
+                      variant="outline"
+                      onClick={() => handleEditClick(reward)}
+                    >
+                      Edit
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      onClick={() => handleDeleteReward(reward.reward_id)}
+                    >
+                      Delete
+                    </Button>
+                    {reward.hasRewardCodes && (
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          setSelectedRewardId(reward.reward_id);
+                          setActiveTab("codes");
+                          loadRewardCodes(reward.reward_id);
+                        }}
+                      >
+                        View Codes
+                      </Button>
+                    )}
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))
+          )}
         </TableBody>
       </Table>
     );

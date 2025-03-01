@@ -54,32 +54,78 @@ export default function RewardsPage() {
 
   const refreshUserData = async (userId: string) => {
     try {
-      const [userResponse, transactionsResponse] = await Promise.all([
-        fetch(`/api/rewards/users/${userId}`),
-        fetch(`/api/rewards/transactions/${userId}`),
-      ]);
+      console.log('Starting to fetch user data...', { userId });
+      
+      const [userResponse, transactionsResponse, rewardsResponse] =
+        await Promise.all([
+          fetch(`/api/rewards/users/${userId}`),
+          fetch(`/api/rewards/transactions/${userId}`),
+          fetch(`/api/rewards/available?userId=${userId}`),
+        ]);
 
-      if (!userResponse.ok || !transactionsResponse.ok) {
-        throw new Error("Failed to fetch user data");
+      // Log response statuses
+      console.log("API Response Status:", {
+        user: userResponse.status,
+        transactions: transactionsResponse.status,
+        rewards: rewardsResponse.status,
+      });
+
+      // Handle each response individually to avoid failing everything if one fails
+      let userData = { points: 0 };
+      let transactionsData = { pointsHistory: [] };
+      let rewardsData = { rewards: [] };
+
+      try {
+        if (userResponse.ok) {
+          userData = await userResponse.json();
+        } else {
+          console.error('Failed to fetch user data:', await userResponse.text());
+        }
+      } catch (error) {
+        console.error('Error parsing user response:', error);
       }
 
-      const userData = await userResponse.json();
-      const transactionsData = await transactionsResponse.json();
+      try {
+        if (transactionsResponse.ok) {
+          transactionsData = await transactionsResponse.json();
+        } else {
+          console.error('Failed to fetch transactions:', await transactionsResponse.text());
+        }
+      } catch (error) {
+        console.error('Error parsing transactions response:', error);
+      }
 
-      // Update points from user data
+      try {
+        if (rewardsResponse.ok) {
+          rewardsData = await rewardsResponse.json();
+        } else {
+          console.error('Failed to fetch rewards:', await rewardsResponse.text());
+        }
+      } catch (error) {
+        console.error('Error parsing rewards response:', error);
+      }
+
+      // Log response data
+      console.log("API Response Data:", {
+        user: { ...userData, id: userId },
+        transactionsCount: transactionsData.pointsHistory?.length || 0,
+        rewardsCount: rewardsData.rewards?.length || 0,
+      });
+
+      // Update state with whatever data we successfully retrieved
       setPoints(userData.points || 0);
+      setRewards(rewardsData.rewards || []);
 
-      // Update transactions
-      const formattedTransactions =
-        transactionsData.pointsHistory?.map((history: any) => ({
-          _id: history.id,
-          user_id: history.user_id,
-          description: history.description || history.source,
-          points: history.change_amount,
-          type: history.transaction_type,
-          created_at: history.created_at,
-          status: "completed",
-        })) || [];
+      // Format transactions
+      const formattedTransactions = transactionsData.pointsHistory?.map((history: any) => ({
+        _id: history.id,
+        user_id: history.user_id,
+        description: history.description || history.source,
+        points: history.change_amount,
+        type: history.transaction_type,
+        created_at: history.created_at,
+        status: "completed",
+      })) || [];
 
       setTransactions(formattedTransactions);
 
@@ -96,55 +142,94 @@ export default function RewardsPage() {
 
       setPendingPoints(pendingPoints);
       setLoading(false);
+      setError(null);
     } catch (error) {
       console.error("Failed to refresh user data:", error);
       setError(
-        error instanceof Error ? error.message : "Unknown error occurred"
+        error instanceof Error ? error.message : "Failed to load rewards data"
       );
       setLoading(false);
     }
   };
 
   useEffect(() => {
+    let mounted = true;
+    let isInitialized = false;
+    
     const initializeAuth = async () => {
+      if (isInitialized) return;
       try {
+        console.log('Starting auth initialization...');
+        const supabase = getSupabaseBrowserClient();
         const {
-          data: { session },
+          data: { user },
           error,
-        } = await getSupabaseBrowserClient().auth.getSession();
-        if (error) throw error;
+        } = await supabase.auth.getUser();
+        
+        if (error) {
+          console.error('Auth user error:', error);
+          throw error;
+        }
 
-        setUser(session?.user ?? null);
-        if (session?.user) {
-          await refreshUserData(session.user.id);
+        console.log('Auth user result:', {
+          hasUser: !!user,
+          userId: user?.id,
+          isAuthenticated: !!user
+        });
+
+        if (!mounted) return;
+
+        setUser(user);
+        if (user) {
+          console.log('Fetching data for authenticated user:', user.id);
+          await refreshUserData(user.id);
         } else {
+          console.log('No authenticated user, setting loading to false');
           setLoading(false);
         }
+        isInitialized = true;
       } catch (error) {
-        console.error("Auth initialization error:", error);
-        setError("Failed to initialize authentication");
-        setLoading(false);
+        console.error('Auth initialization error:', error);
+        if (mounted) {
+          setError("Failed to initialize authentication");
+          setLoading(false);
+        }
       }
     };
 
     initializeAuth();
 
-    // Listen for auth changes
+    // Listen for auth changes with debounce
+    let authChangeTimeout: NodeJS.Timeout;
     const {
       data: { subscription },
     } = getSupabaseBrowserClient().auth.onAuthStateChange(
       async (_event, session) => {
-        setUser(session?.user ?? null);
-        if (session?.user) {
-          await refreshUserData(session.user.id);
-        } else {
-          setLoading(false);
+        // Clear any pending auth change handler
+        if (authChangeTimeout) {
+          clearTimeout(authChangeTimeout);
         }
+
+        // Debounce auth changes to prevent rapid re-renders
+        authChangeTimeout = setTimeout(async () => {
+          if (!mounted) return;
+          const user = session?.user ?? null;
+          setUser(user);
+          if (user) {
+            await refreshUserData(user.id);
+          } else {
+            setLoading(false);
+          }
+        }, 1000); // 1 second debounce
       }
     );
 
     return () => {
+      mounted = false;
       subscription.unsubscribe();
+      if (authChangeTimeout) {
+        clearTimeout(authChangeTimeout);
+      }
     };
   }, []);
 
@@ -159,6 +244,20 @@ export default function RewardsPage() {
     return () => clearInterval(intervalId);
   }, [user]);
 
+  if (loading) {
+    return (
+      <Layout>
+        <div className="container mx-auto px-4 py-8">
+          <Card className="p-6">
+            <div className="flex items-center justify-center min-h-[200px]">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+            </div>
+          </Card>
+        </div>
+      </Layout>
+    );
+  }
+
   if (!user) {
     return (
       <Layout>
@@ -166,21 +265,6 @@ export default function RewardsPage() {
           <Card className="p-6">
             <h1 className="text-2xl font-bold mb-4">Sign in to view rewards</h1>
             <UnifiedAuthForm />
-          </Card>
-        </div>
-      </Layout>
-    );
-  }
-
-  if (loading) {
-    return (
-      <Layout>
-        <div className="container mx-auto px-4 py-8">
-          <Card className="p-6">
-            <div className="animate-pulse">
-              <div className="h-4 bg-gray-200 rounded w-3/4 mb-4"></div>
-              <div className="h-4 bg-gray-200 rounded w-1/2"></div>
-            </div>
           </Card>
         </div>
       </Layout>
@@ -204,13 +288,86 @@ export default function RewardsPage() {
   }
 
   return (
-    <Layout>
-      <div className="container mx-auto px-4 py-8">
+    <Layout className="bg-background">
+      <div className="container mx-auto px-4 py-8 space-y-8">
         <UserProfile
           points={points}
           pendingPoints={pendingPoints}
           user={user}
         />
+
+        {/* Available Rewards Section */}
+        <Card className="p-6">
+          <h2 className="text-2xl font-bold mb-6">Available Rewards</h2>
+          <div className="space-y-4">
+            {rewards.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                No rewards available at the moment.
+              </div>
+            ) : (
+              rewards.map((reward) => (
+                <Card key={reward.reward_id} className="p-4">
+                  <h3 className="text-lg font-semibold mb-2">{reward.name}</h3>
+                  <p className="text-muted-foreground mb-4">{reward.description}</p>
+                  <div className="flex justify-between items-center">
+                    <span className="text-lg font-bold">
+                      {reward.pointsCost} points
+                    </span>
+                    <Button
+                      onClick={() => {
+                        if (points >= reward.pointsCost) {
+                          // Handle redemption
+                          fetch(`/api/rewards/${reward.reward_id}/redeem`, {
+                            method: "POST",
+                            headers: {
+                              "Content-Type": "application/json",
+                            },
+                            body: JSON.stringify({
+                              userId: user.id,
+                            }),
+                          })
+                            .then((response) => response.json())
+                            .then((data) => {
+                              if (data.success) {
+                                toast({
+                                  title: "Success",
+                                  description: `Successfully redeemed ${reward.name}`,
+                                });
+                                refreshUserData(user.id);
+                              } else {
+                                throw new Error(
+                                  data.error || "Failed to redeem reward"
+                                );
+                              }
+                            })
+                            .catch((error) => {
+                              toast({
+                                title: "Error",
+                                description: error.message,
+                                variant: "destructive",
+                              });
+                            });
+                        } else {
+                          toast({
+                            title: "Insufficient Points",
+                            description: `You need ${
+                              reward.pointsCost - points
+                            } more points to redeem this reward`,
+                            variant: "destructive",
+                          });
+                        }
+                      }}
+                      disabled={points < reward.pointsCost}
+                    >
+                      Redeem
+                    </Button>
+                  </div>
+                </Card>
+              ))
+            )}
+          </div>
+        </Card>
+
         <PointsHistory transactions={transactions} />
       </div>
     </Layout>
