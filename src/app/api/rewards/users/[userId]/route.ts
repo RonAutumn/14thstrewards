@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
+import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 import type { Database } from '@/lib/db/schema';
 
@@ -8,7 +8,7 @@ export async function GET(
   { params }: { params: { userId: string } }
 ) {
   try {
-    const supabase = createServerComponentClient<Database>({ cookies });
+    const supabase = createRouteHandlerClient<Database>({ cookies: () => cookies() });
 
     // First, try to get the existing user
     const { data: profile, error: fetchError } = await supabase
@@ -23,20 +23,12 @@ export async function GET(
 
     // If user doesn't exist, create a new one
     if (!profile) {
-      // Get the user's email from auth
-      const { data: { user: authUser }, error: authError } = await supabase.auth.admin.getUserById(params.userId);
-      
-      if (authError) {
-        throw authError;
-      }
-
       const { data: newProfile, error: createError } = await supabase
         .from('profiles')
         .insert({
           id: params.userId,
-          email: authUser?.email || '',
           points: 0,
-          membership_level: 'bronze',
+          membership_level: 'Bronze',
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         })
@@ -66,7 +58,7 @@ export async function PATCH(
 ) {
   try {
     const body = await request.json();
-    const supabase = createServerComponentClient<Database>({ cookies });
+    const supabase = createRouteHandlerClient<Database>({ cookies: () => cookies() });
 
     const { data: profile, error: updateError } = await supabase
       .from('profiles')

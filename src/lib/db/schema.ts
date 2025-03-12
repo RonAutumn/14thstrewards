@@ -114,19 +114,112 @@ export interface Database {
       profiles: {
         Row: {
           id: string
-          user_id: string
-          current_tier_id: string
-          points: number
+          email: string | null
+          is_admin: boolean | null
           created_at: string
           updated_at: string
+          points: number | null
+          membership_level: string | null
+          birth_date: string | null
+          last_birthday_reward_claimed: string | null
+          referral_code: string | null
+        }
+        Insert: {
+          id: string
+          email?: string | null
+          is_admin?: boolean | null
+          created_at?: string
+          updated_at?: string
+          points?: number | null
+          membership_level?: string | null
+          birth_date?: string | null
+          last_birthday_reward_claimed?: string | null
+          referral_code?: string | null
+        }
+        Update: {
+          id?: string
+          email?: string | null
+          is_admin?: boolean | null
+          created_at?: string
+          updated_at?: string
+          points?: number | null
+          membership_level?: string | null
+          birth_date?: string | null
+          last_birthday_reward_claimed?: string | null
+          referral_code?: string | null
         }
       }
       points_history: {
         Row: {
           id: string
           user_id: string
-          points_earned: number
-          created_at: string
+          points_before: number
+          points_after: number
+          change_amount: number
+          transaction_type: string
+          source: string
+          metadata?: any
+          created_at?: string
+          expires_at?: string
+          order_id?: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          points_before: number
+          points_after: number
+          change_amount: number
+          transaction_type: string
+          source: string
+          metadata?: any
+          created_at?: string
+          expires_at?: string
+          order_id?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          points_before?: number
+          points_after?: number
+          change_amount?: number
+          transaction_type?: string
+          source?: string
+          metadata?: any
+          created_at?: string
+          expires_at?: string
+          order_id?: string
+        }
+      }
+      transactions: {
+        Row: {
+          id: string
+          user_id: string
+          description?: string
+          points: number
+          type: string
+          created_at?: string
+          reward_code?: string
+          reward_id?: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          description?: string
+          points: number
+          type: string
+          created_at?: string
+          reward_code?: string
+          reward_id?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          description?: string
+          points?: number
+          type?: string
+          created_at?: string
+          reward_code?: string
+          reward_id?: string
         }
       }
       orders: {
