@@ -1,4 +1,4 @@
-import { createServerClient } from '@/lib/supabase/server';
+import { createServerSupabaseClient } from '@/lib/supabase/server';
 
 interface TimeWindow {
   startTime: string;
@@ -36,7 +36,7 @@ interface DeliveryFeeInfo {
 export class DeliveryService {
   static async getDeliveryDays(zipCode?: string) {
     try {
-      const supabase = createServerClient();
+      const supabase = await createServerSupabaseClient();
       
       if (!zipCode) {
         throw new Error('ZIP code is required');
@@ -107,7 +107,7 @@ export class DeliveryService {
 
   static async getDeliveryFeeByZipCode(zipCode: string, subtotal: number): Promise<DeliveryFeeInfo> {
     try {
-      const supabase = createServerClient();
+      const supabase = await createServerSupabaseClient();
       const { data: fees, error } = await supabase
         .from('delivery_fees')
         .select('*')
@@ -135,7 +135,7 @@ export class DeliveryService {
 
   static async getAvailableDates(zipCode: string, startDate: Date): Promise<Date[]> {
     try {
-      const supabase = createServerClient();
+      const supabase = await createServerSupabaseClient();
       
       // First check if delivery is available for this ZIP code
       const { data: fees, error: feeError } = await supabase
@@ -154,11 +154,15 @@ export class DeliveryService {
         return []; // No delivery available for this ZIP code
       }
 
+      // Format the start date as YYYY-MM-DD for date-only comparison
+      const formattedStartDate = startDate.toISOString().split('T')[0];
+      console.log('Fetching delivery days from:', formattedStartDate);
+
       // Get all delivery days
       const { data: deliveryDays, error: daysError } = await supabase
         .from('delivery_days')
         .select('*')
-        .gte('date', startDate.toISOString().split('T')[0])
+        .gte('date', formattedStartDate)
         .eq('status', 'open')
         .order('date');
 
@@ -168,9 +172,11 @@ export class DeliveryService {
       }
 
       if (!deliveryDays || deliveryDays.length === 0) {
-        console.log('No delivery days found');
+        console.log('No delivery days found in database');
         return [];
       }
+
+      console.log('Found delivery days:', deliveryDays.length, 'First day:', deliveryDays[0].date);
 
       // Get ZIP code restrictions
       const { data: restrictions, error: restrictionsError } = await supabase
@@ -184,27 +190,45 @@ export class DeliveryService {
         throw restrictionsError;
       }
 
-      // If there are no restrictions, all days are available
+      let availableDates: Date[];
+
+      // If there are no restrictions, all days except Sundays are available
       if (!restrictions || restrictions.length === 0) {
-        console.log('No restrictions found - all days available');
-        return deliveryDays
-          .map(day => new Date(day.date))
-          .sort((a, b) => a.getTime() - b.getTime());
+        console.log('No restrictions found - all days except Sundays available');
+        availableDates = deliveryDays
+          .filter(day => {
+            const date = new Date(day.date);
+            return date.getUTCDay() !== 0; // Filter out Sundays using UTC
+          })
+          .map(day => {
+            // Create a new date at midnight UTC for consistency
+            const [year, month, dayNum] = day.date.split('T')[0].split('-').map(Number);
+            return new Date(Date.UTC(year, month - 1, dayNum));
+          });
+      } else {
+        // If there are restrictions, filter by allowed days
+        console.log('Applying zip code restrictions');
+        availableDates = deliveryDays
+          .filter(day => {
+            const date = new Date(day.date);
+            const dayOfWeek = date.getUTCDay();
+            return restrictions.some(r => r.day_of_week === dayOfWeek);
+          })
+          .map(day => {
+            // Create a new date at midnight UTC for consistency
+            const [year, month, dayNum] = day.date.split('T')[0].split('-').map(Number);
+            return new Date(Date.UTC(year, month - 1, dayNum));
+          });
       }
 
-      // If there are restrictions, filter by allowed days
-      const availableDates = deliveryDays
-        .filter(day => {
-          const dayOfWeek = new Date(day.date).getDay();
-          return restrictions.some(r => r.day_of_week === dayOfWeek);
-        })
-        .map(day => new Date(day.date))
-        .sort((a, b) => a.getTime() - b.getTime());
-
-      console.log(`Found ${availableDates.length} available dates for zip code ${zipCode}`);
+      // Sort dates chronologically
+      availableDates.sort((a, b) => a.getTime() - b.getTime());
       
-      if (availableDates.length === 0) {
-        console.log('No available dates found after filtering');
+      // Log the first few available dates for debugging
+      if (availableDates.length > 0) {
+        console.log('First 3 available dates:', 
+          availableDates.slice(0, 3).map(d => d.toISOString().split('T')[0])
+        );
       }
 
       return availableDates;
@@ -216,7 +240,7 @@ export class DeliveryService {
 
   static async getAvailableTimeSlots(date: Date, zipCode: string) {
     try {
-      const supabase = createServerClient();
+      const supabase = await createServerSupabaseClient();
       const formattedDate = date.toISOString().split('T')[0];
       const dayOfWeek = date.getDay();
 

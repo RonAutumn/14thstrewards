@@ -2041,3 +2041,183 @@ const formattedPhone = `${cleanPhone.slice(0, 3)}-${cleanPhone.slice(
    ```
 
 <div style="background: linear-gradient(to right, #4f46e5, #9333ea); height: 4px; margin: 24px 0;"></div>
+
+## ZIP Code Filtering Implementation
+
+#### Added
+- Comprehensive ZIP code validation and filtering system:
+  ```typescript
+  interface ZipCodeRestriction {
+    zip_code: string;
+    borough: string;
+    is_available: boolean;
+    min_order: number;
+    delivery_fee: number;
+    days_available: number[];  // 0-6 representing Sunday-Saturday
+    distance_miles: number;
+    created_at: string;
+    updated_at: string;
+  }
+
+  // ZIP code validation and availability check
+  async function validateDeliveryZipCode(
+    zipCode: string,
+    orderTotal: number,
+    deliveryDate: Date
+  ): Promise<{
+    isValid: boolean;
+    fee: number;
+    message?: string;
+  }> {
+    const supabase = await createServerSupabaseClient();
+    
+    // Check if ZIP code exists in our delivery area
+    const { data: restriction } = await supabase
+      .from('delivery_zip_restrictions')
+      .select('*')
+      .eq('zip_code', zipCode)
+      .single();
+
+    if (!restriction) {
+      return {
+        isValid: false,
+        fee: 0,
+        message: 'Delivery is not available in your area'
+      };
+    }
+
+    // Check if delivery is available on selected day
+    const dayOfWeek = deliveryDate.getDay();
+    if (!restriction.days_available.includes(dayOfWeek)) {
+      return {
+        isValid: false,
+        fee: 0,
+        message: 'Delivery is not available on the selected day in your area'
+      };
+    }
+
+    // Check minimum order requirement
+    if (orderTotal < restriction.min_order) {
+      return {
+        isValid: false,
+        fee: restriction.delivery_fee,
+        message: `Minimum order of $${restriction.min_order} required for delivery to your area`
+      };
+    }
+
+    return {
+      isValid: true,
+      fee: restriction.delivery_fee
+    };
+  }
+  ```
+
+#### Changed
+- Enhanced delivery fee calculation based on borough and distance:
+  - Manhattan: Variable fees based on zones
+  - Brooklyn/Queens: Distance-based pricing tiers
+  - Free delivery thresholds by borough
+- Improved ZIP code validation with real-time availability checks
+- Updated delivery slot generation to consider ZIP-specific restrictions
+
+#### Database Schema
+```sql
+-- ZIP code restrictions table
+CREATE TABLE delivery_zip_restrictions (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  zip_code TEXT NOT NULL,
+  borough TEXT NOT NULL,
+  is_available BOOLEAN NOT NULL DEFAULT true,
+  min_order DECIMAL(10,2) NOT NULL,
+  delivery_fee DECIMAL(10,2) NOT NULL,
+  days_available INTEGER[] NOT NULL,
+  distance_miles DECIMAL(5,2) NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT unique_zip_code UNIQUE (zip_code)
+);
+
+-- Borough-specific delivery settings
+CREATE TABLE borough_delivery_settings (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  borough TEXT NOT NULL,
+  base_fee DECIMAL(10,2) NOT NULL,
+  free_delivery_threshold DECIMAL(10,2) NOT NULL,
+  max_distance_miles DECIMAL(5,2) NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT unique_borough UNIQUE (borough)
+);
+```
+
+#### Implementation Details
+- ZIP code validation process:
+  1. Check if ZIP exists in delivery area
+  2. Verify delivery availability for selected day
+  3. Validate minimum order requirements
+  4. Calculate applicable delivery fee
+  5. Check distance restrictions
+- Borough-specific rules:
+  - Manhattan (ZIP codes 10001-10282):
+    - Zone 1 (Below 59th St): $15 delivery fee, free for orders over $150
+    - Zone 2 (60th-96th St): $20 delivery fee, free for orders over $175
+    - Zone 3 (Above 96th St): $25 delivery fee, free for orders over $200
+  - Brooklyn/Queens:
+    - Distance-based pricing:
+      - 0-3 miles: $15 fee, free over $150
+      - 3-5 miles: $20 fee, free over $175
+      - 5-7 miles: $25 fee, free over $200
+- Day-of-week restrictions:
+  - Manhattan: All days except Sunday
+  - Brooklyn/Queens: Wednesday-Saturday only
+  - Holiday exclusions handled via admin dashboard
+
+<div style="background: linear-gradient(to right, #4f46e5, #9333ea); height: 4px; margin: 24px 0;"></div>
+
+ZIP Code Validation System:
+We use a delivery_zip_restrictions table to store all valid delivery ZIP codes
+Each ZIP code entry includes:
+Borough association
+Minimum order requirement
+Base delivery fee
+Available delivery days
+Distance from store
+Availability status
+Borough-Based Rules:
+Manhattan (ZIP codes 10001-10282):
+Zone 1 (Below 59th St): $15 delivery fee, free for orders over $150
+Zone 2 (60th-96th St): $20 delivery fee, free for orders over $175
+Zone 3 (Above 96th St): $25 delivery fee, free for orders over $200
+Brooklyn/Queens:
+Distance-based pricing:
+0-3 miles: $15 fee, free over $150
+3-5 miles: $20 fee, free over $175
+5-7 miles: $25 fee, free over $200
+  
+  
+   async function validateDeliveryZipCode(zipCode, orderTotal, deliveryDate) {
+     // 1. Check if ZIP exists in delivery area
+     const restriction = await getZipCodeRestriction(zipCode);
+     if (!restriction) {
+       return { isValid: false, message: 'Delivery not available in your area' };
+     }
+
+     // 2. Check day-of-week availability
+     const dayOfWeek = deliveryDate.getDay();
+     if (!restriction.days_available.includes(dayOfWeek)) {
+       return { isValid: false, message: 'Delivery not available on selected day' };
+     }
+
+     // 3. Check minimum order requirement
+     if (orderTotal < restriction.min_order) {
+       return {
+         isValid: false,
+         message: `Minimum order of $${restriction.min_order} required`
+       };
+     }
+
+     // 4. Calculate delivery fee
+     const fee = calculateDeliveryFee(restriction, orderTotal);
+     
+     return { isValid: true, fee };
+   }

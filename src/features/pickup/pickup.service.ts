@@ -1,7 +1,11 @@
-import { supabaseServer } from '@/lib/supabase/server';
+import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { PickupSettings, PickupSchedule, TimeSlot } from '@/types/pickup';
 
 export class PickupService {
+  private static async getSupabaseClient() {
+    return await createServerSupabaseClient();
+  }
+
   // Transform database schedule to application format
   private static transformSchedule(dbSchedule: any[]) {
     return dbSchedule.map(day => ({
@@ -49,6 +53,7 @@ export class PickupService {
 
   // Initialize store pickup settings
   static async initializeStoreSettings(storeId: string) {
+    const supabase = await this.getSupabaseClient();
     const defaultSchedule = [
       'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'
     ].map(day => ({
@@ -72,7 +77,7 @@ export class PickupService {
       special_hours: []
     };
 
-    const { data, error } = await supabaseServer
+    const { data, error } = await supabase
       .from('pickup_settings')
       .upsert(settings)
       .select()
@@ -84,7 +89,8 @@ export class PickupService {
 
   // Get store pickup settings
   static async getStoreSettings(storeId: string) {
-    const { data, error } = await supabaseServer
+    const supabase = await this.getSupabaseClient();
+    const { data, error } = await supabase
       .from('pickup_settings')
       .select('*')
       .eq('store_id', storeId)
@@ -96,7 +102,8 @@ export class PickupService {
 
   // Update store pickup settings
   static async updateStoreSettings(storeId: string, updates: Partial<PickupSettings>) {
-    const { data, error } = await supabaseServer
+    const supabase = await this.getSupabaseClient();
+    const { data, error } = await supabase
       .from('pickup_settings')
       .update(updates)
       .eq('store_id', storeId)
@@ -115,7 +122,8 @@ export class PickupService {
     if (!settings) throw new Error('Store settings not found');
 
     // Get existing slots from database
-    const { data: existingSlots } = await supabaseServer
+    const supabase = await this.getSupabaseClient();
+    const { data: existingSlots } = await supabase
       .from('pickup_slots')
       .select('*')
       .eq('store_id', storeId)
@@ -158,7 +166,7 @@ export class PickupService {
 
       if (slotEnd <= closeTime) {
         // Create the slot in database
-        const { data: newSlot } = await supabaseServer
+        const { data: newSlot } = await supabase
           .from('pickup_slots')
           .insert({
             store_id: storeId,
@@ -256,7 +264,8 @@ export class PickupService {
       return day;
     });
 
-    const { data, error } = await supabaseServer
+    const supabase = await this.getSupabaseClient();
+    const { data, error } = await supabase
       .from('pickup_settings')
       .update({ schedule: updatedSchedule })
       .eq('store_id', storeId)
@@ -317,7 +326,8 @@ export class PickupService {
     }
 
     // Check slot availability
-    const { data: slot } = await supabaseServer
+    const supabase = await this.getSupabaseClient();
+    const { data: slot } = await supabase
       .from('pickup_slots')
       .select('*')
       .eq('store_id', storeId)
@@ -343,7 +353,8 @@ export class PickupService {
 
   // Update holiday dates
   static async updateHolidayDates(storeId: string, holidays: { date: Date; reason?: string; is_open: boolean }[]) {
-    const { data, error } = await supabaseServer
+    const supabase = await this.getSupabaseClient();
+    const { data, error } = await supabase
       .from('pickup_settings')
       .update({ holiday_dates: holidays })
       .eq('store_id', storeId)
@@ -359,7 +370,8 @@ export class PickupService {
     storeId: string, 
     specialHours: { date: Date; open_time: string; close_time: string; reason?: string }[]
   ) {
-    const { data, error } = await supabaseServer
+    const supabase = await this.getSupabaseClient();
+    const { data, error } = await supabase
       .from('pickup_settings')
       .update({ special_hours: specialHours })
       .eq('store_id', storeId)

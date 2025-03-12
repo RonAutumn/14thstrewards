@@ -1,4 +1,9 @@
 ---
+description: 
+globs: 
+alwaysApply: false
+---
+---
 description: globs: ["**/*.env*", "src/lib/auth/**/*"]
 globs: ["**/*.env*", "src/lib/auth/**/*"]
 ---

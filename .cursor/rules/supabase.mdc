@@ -3,6 +3,11 @@ description:
 globs: 
 alwaysApply: false
 ---
+---
+description: 
+globs: 
+alwaysApply: false
+---
 Rule Name: mcp
 Description: Rules for using Model Context Protocol with Postgres
 alwaysApply: true

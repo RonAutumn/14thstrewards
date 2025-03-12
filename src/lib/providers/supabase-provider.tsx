@@ -1,135 +1,92 @@
 "use client";
 
 import { createContext, useContext, useEffect, useState } from "react";
-import { User } from "@supabase/supabase-js";
+import { User, Session } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/client";
+import type { Database } from "@/types/supabase";
 
-interface SupabaseContextType {
+type SupabaseContextType = {
   user: User | null;
+  session: Session | null;
   isLoading: boolean;
   isAdmin: boolean;
-}
+  signOut: () => Promise<void>;
+};
 
 const SupabaseContext = createContext<SupabaseContextType>({
   user: null,
+  session: null,
   isLoading: true,
   isAdmin: false,
+  signOut: async () => {},
 });
 
 export function SupabaseProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
+  const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
-  const [isMounted, setIsMounted] = useState(false);
+  const supabase = createClient();
 
   useEffect(() => {
-    setIsMounted(true);
-  }, []);
-
-  useEffect(() => {
-    if (!isMounted) return;
-
-    let mounted = true;
-    const supabase = createClient();
-
     const initializeAuth = async () => {
       try {
-        const {
-          data: { session },
-          error,
-        } = await supabase.auth.getSession();
-        if (error) {
-          console.error("Session error:", error);
-          if (mounted) {
-            setIsLoading(false);
-          }
-          return;
-        }
+        const { data: { session: initialSession }, error } = await supabase.auth.getSession();
+        if (error) throw error;
 
-        if (session?.user) {
-          // Check if user is admin
-          try {
-            const { data: profile } = await supabase
-              .from("profiles")
-              .select("is_admin")
-              .eq("id", session.user.id)
-              .single();
-
-            if (mounted) {
-              setUser(session.user);
-              setIsAdmin(!!profile?.is_admin);
-              setIsLoading(false);
-            }
-          } catch (profileError) {
-            console.error("Error fetching profile:", profileError);
-            if (mounted) {
-              setUser(session.user);
-              setIsAdmin(false);
-              setIsLoading(false);
-            }
-          }
-        } else {
-          if (mounted) {
-            setUser(null);
-            setIsAdmin(false);
-            setIsLoading(false);
-          }
+        if (initialSession?.user) {
+          setSession(initialSession);
+          setUser(initialSession.user);
+          
+          const { data: profile } = await supabase
+            .from("profiles")
+            .select("is_admin")
+            .eq("id", initialSession.user.id)
+            .single();
+          
+          setIsAdmin(!!profile?.is_admin);
         }
       } catch (error) {
         console.error("Error initializing auth:", error);
-        if (mounted) {
-          setIsLoading(false);
-        }
+      } finally {
+        setIsLoading(false);
       }
     };
 
     initializeAuth();
 
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      if (!mounted) return;
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, currentSession) => {
+        setSession(currentSession);
+        setUser(currentSession?.user ?? null);
+        setIsAdmin(false);
 
-      if (session?.user) {
-        try {
+        if (currentSession?.user) {
           const { data: profile } = await supabase
             .from("profiles")
             .select("is_admin")
-            .eq("id", session.user.id)
+            .eq("id", currentSession.user.id)
             .single();
-
-          if (mounted) {
-            setUser(session.user);
-            setIsAdmin(!!profile?.is_admin);
-          }
-        } catch (profileError) {
-          console.error("Error fetching profile on auth change:", profileError);
-          if (mounted) {
-            setUser(session.user);
-            setIsAdmin(false);
-          }
-        }
-      } else {
-        if (mounted) {
-          setUser(null);
-          setIsAdmin(false);
+          
+          setIsAdmin(!!profile?.is_admin);
         }
       }
-    });
+    );
 
     return () => {
-      mounted = false;
       subscription.unsubscribe();
     };
-  }, [isMounted]);
+  }, []);
 
-  // Prevent hydration mismatch by not rendering until mounted
-  if (!isMounted) {
-    return null;
-  }
+  const signOut = async () => {
+    const { error } = await supabase.auth.signOut();
+    if (error) {
+      console.error("Error signing out:", error);
+    }
+  };
 
   return (
-    <SupabaseContext.Provider value={{ user, isLoading, isAdmin }}>
+    <SupabaseContext.Provider value={{ user, session, isLoading, isAdmin, signOut }}>
       {children}
     </SupabaseContext.Provider>
   );
@@ -137,7 +94,7 @@ export function SupabaseProvider({ children }: { children: React.ReactNode }) {
 
 export const useSupabase = () => {
   const context = useContext(SupabaseContext);
-  if (context === undefined) {
+  if (!context) {
     throw new Error("useSupabase must be used within a SupabaseProvider");
   }
   return context;

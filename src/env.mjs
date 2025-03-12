@@ -6,6 +6,7 @@ export const env = createEnv({
         SHIPSTATION_API_KEY: z.string(),
         SHIPSTATION_API_SECRET: z.string(),
         NEXT_PUBLIC_API_URL: z.string(),
+        SUPABASE_SERVICE_ROLE_KEY: z.string(),
     },
     client: {
         NEXT_PUBLIC_SUPABASE_URL: z.string(),
@@ -17,5 +18,6 @@ export const env = createEnv({
         NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL,
         NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
         NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+        SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
     },
 }); 

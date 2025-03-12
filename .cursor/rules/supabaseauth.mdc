@@ -1,0 +1,182 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+ Supabase Authentication Rules
+
+## General Authentication Guidelines
+
+1. Use Supabase's built-in auth system for all authentication flows
+2. Implement proper session management using JWT tokens
+3. Always use HTTPS for all auth-related requests
+4. Implement proper error handling for all auth operations
+5. Follow security best practices for password handling
+
+## Session Management
+
+### Access Tokens
+- Access tokens (JWTs) should be short-lived (5-60 minutes)
+- Store access tokens securely (never in localStorage for production)
+- Include `session_id` claim in all JWTs for tracking
+- Implement proper token refresh mechanism
+
+### Refresh Tokens
+- Refresh tokens should be single-use only
+- Implement proper rotation of refresh tokens
+- Store refresh tokens securely (httpOnly cookies recommended)
+- Clear refresh tokens on logout
+
+## User Sessions
+
+### Regular User Sessions
+1. Session Configuration:
+   - Set appropriate session timeouts (recommended: 1 hour)
+   - Implement session refresh mechanism
+   - Limit concurrent sessions per user if needed
+
+2. Session Security:
+   - Terminate sessions on password change
+   - Implement session timeout on inactivity
+   - Allow users to view and manage their active sessions
+   - Implement secure session recovery mechanisms
+
+3. Session Validation:
+   - Validate JWT on each request
+   - Check token expiration
+   - Verify session hasn't been revoked
+
+## Admin Sessions
+
+### Admin Authentication
+1. Enhanced Security:
+   - Require 2FA/MFA for admin accounts
+   - Implement IP-based access restrictions
+   - Set shorter session timeouts (recommended: 30 minutes)
+   - Require stronger password policies
+
+2. Session Management:
+   - Maintain separate session tracking for admin actions
+   - Log all admin session activities
+   - Implement automatic session termination after sensitive operations
+   - Require re-authentication for critical operations
+
+3. Access Control:
+   - Implement Role-Based Access Control (RBAC)
+   - Use Row Level Security (RLS) policies
+   - Maintain audit logs of admin actions
+   - Restrict admin access to specific endpoints
+
+## Implementation Guidelines
+
+### User Authentication Flow
+```typescript
+// Example of proper user authentication
+const signInUser = async (email: string, password: string) => {
+  try {
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+    if (error) throw error;
+    return data;
+  } catch (error) {
+    console.error('Error signing in:', error.message);
+    throw error;
+  }
+};
+```
+
+### Admin Authentication Flow
+```typescript
+// Example of admin authentication with additional security
+const signInAdmin = async (email: string, password: string, mfaToken: string) => {
+  try {
+    // First verify MFA token
+    const isMfaValid = await verifyMfaToken(mfaToken);
+    if (!isMfaValid) throw new Error('Invalid MFA token');
+
+    // Then proceed with sign in
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+    if (error) throw error;
+
+    // Verify admin role
+    const { data: roleData, error: roleError } = await supabase
+      .from('user_roles')
+      .select('role')
+      .eq('user_id', data.user.id)
+      .single();
+
+    if (roleError || roleData?.role !== 'admin') {
+      throw new Error('Unauthorized admin access');
+    }
+
+    return data;
+  } catch (error) {
+    console.error('Error in admin sign in:', error.message);
+    throw error;
+  }
+};
+```
+
+## Security Policies
+
+### Row Level Security (RLS)
+```sql
+-- Example RLS policy for user data
+ALTER TABLE user_data ENABLE ROW LEVEL SECURITY;
+
+-- Regular users can only access their own data
+CREATE POLICY "Users can view own data" ON user_data
+  FOR SELECT
+  USING (auth.uid() = user_id);
+
+-- Admins can access all data
+CREATE POLICY "Admins can view all data" ON user_data
+  FOR ALL
+  USING (
+    EXISTS (
+      SELECT 1 FROM user_roles
+      WHERE user_id = auth.uid()
+      AND role = 'admin'
+    )
+  );
+```
+
+## Error Handling
+
+1. Implement proper error messages for:
+   - Invalid credentials
+   - Expired sessions
+   - Unauthorized access attempts
+   - Rate limiting
+   - MFA failures
+
+2. Log security-relevant events:
+   - Failed login attempts
+   - Password changes
+   - Admin actions
+   - Session terminations
+
+## Best Practices
+
+1. Security:
+   - Never store sensitive auth data in client storage
+   - Implement rate limiting for auth endpoints
+   - Use secure password reset flows
+   - Implement proper CORS policies
+
+2. User Experience:
+   - Provide clear error messages
+   - Implement proper loading states
+   - Handle offline scenarios
+   - Provide session recovery options
+
+3. Maintenance:
+   - Regularly audit active sessions
+   - Monitor auth logs
+   - Update security policies
+   - Review access patterns 

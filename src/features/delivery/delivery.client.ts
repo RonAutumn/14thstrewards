@@ -70,23 +70,57 @@ export class DeliveryClient {
     });
     
     try {
+      console.log('Fetching available dates for:', {
+        zipCode,
+        startDate: startDate.toISOString()
+      });
+
       const response = await fetch(`/api/delivery?${params}`);
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
+        console.error('Server error response:', {
+          status: response.status,
+          statusText: response.statusText,
+          error: errorData.error
+        });
         throw new Error(
           `Failed to fetch available dates: ${response.status} ${response.statusText}` +
           (errorData.error ? ` - ${errorData.error}` : '')
         );
       }
+
       const data = await response.json();
+      console.log('Server response:', data);
       
       if (!data.dates || !Array.isArray(data.dates)) {
-        console.error('Invalid response format:', data);
+        console.error('Invalid response format - missing dates array:', data);
         throw new Error('Invalid response format from server');
       }
 
       // Convert string dates to Date objects
-      return data.dates.map((dateStr: string) => new Date(dateStr));
+      const parsedDates = data.dates
+        .map((dateStr: string) => {
+          try {
+            const date = new Date(dateStr);
+            // Ensure the date is valid
+            if (isNaN(date.getTime())) {
+              console.error('Invalid date string:', dateStr);
+              return null;
+            }
+            return date;
+          } catch (error) {
+            console.error('Error parsing date:', dateStr, error);
+            return null;
+          }
+        })
+        .filter((date: Date | null): date is Date => date !== null);
+
+      console.log('Parsed dates:', {
+        count: parsedDates.length,
+        dates: parsedDates.map(d => d.toISOString())
+      });
+      
+      return parsedDates;
     } catch (error) {
       console.error('Error in getAvailableDates:', error);
       throw error;

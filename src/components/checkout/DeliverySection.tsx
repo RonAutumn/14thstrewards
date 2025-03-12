@@ -16,6 +16,9 @@ import {
 import { DeliveryCalendar } from "@/components/delivery/delivery-calendar";
 import { DeliveryClient } from "@/features/delivery/delivery.client";
 import { toast } from "@/components/ui/use-toast";
+import { formatCurrency } from "@/lib/format";
+import { Button } from "@/components/ui/button";
+import { AddressAutocomplete } from "@/components/address/address-autocomplete";
 
 export interface DeliveryInfo {
   address: string;
@@ -30,9 +33,24 @@ export interface DeliveryInfo {
 }
 
 interface DeliverySectionProps {
-  onDeliveryInfoChange: (info: DeliveryInfo) => void;
+  onDeliveryInfoChange: (info: {
+    address: string;
+    city: string;
+    zipCode: string;
+    deliveryDate?: Date;
+    deliveryTime?: string;
+    instructions: string;
+    deliveryFee: number;
+    freeDeliveryThreshold: number;
+    isDeliveryFree: boolean;
+  }) => void;
   subtotal: number;
-  errors: any;
+  errors?: {
+    address?: string[];
+    zipCode?: string[];
+    deliveryDate?: string[];
+    deliveryTime?: string[];
+  };
   isDeliveryAddress?: boolean;
 }
 

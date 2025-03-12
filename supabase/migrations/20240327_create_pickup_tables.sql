@@ -86,4 +86,52 @@ CREATE TRIGGER update_pickup_slot_assignments_updated_at
 CREATE TRIGGER update_pickup_blackout_dates_updated_at
     BEFORE UPDATE ON pickup_blackout_dates
     FOR EACH ROW
-    EXECUTE FUNCTION update_pickup_updated_at_column(); 
+    EXECUTE FUNCTION update_pickup_updated_at_column();
+
+-- Enable Row Level Security
+ALTER TABLE pickup_settings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE pickup_slots ENABLE ROW LEVEL SECURITY;
+ALTER TABLE pickup_slot_assignments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE pickup_blackout_dates ENABLE ROW LEVEL SECURITY;
+
+-- Create policies for pickup_settings
+CREATE POLICY "Allow public read access to pickup settings"
+    ON pickup_settings FOR SELECT
+    USING (true);
+
+CREATE POLICY "Allow service role to manage pickup settings"
+    ON pickup_settings FOR ALL
+    USING (auth.role() = 'service_role');
+
+-- Create policies for pickup_slots
+CREATE POLICY "Allow public read access to pickup slots"
+    ON pickup_slots FOR SELECT
+    USING (true);
+
+CREATE POLICY "Allow service role to manage pickup slots"
+    ON pickup_slots FOR ALL
+    USING (auth.role() = 'service_role');
+
+-- Create policies for pickup_slot_assignments
+CREATE POLICY "Allow users to view their own pickup assignments"
+    ON pickup_slot_assignments FOR SELECT
+    USING (
+        auth.uid() IN (
+            SELECT user_id
+            FROM orders
+            WHERE id = order_id
+        )
+    );
+
+CREATE POLICY "Allow service role to manage pickup assignments"
+    ON pickup_slot_assignments FOR ALL
+    USING (auth.role() = 'service_role');
+
+-- Create policies for pickup_blackout_dates
+CREATE POLICY "Allow public read access to pickup blackout dates"
+    ON pickup_blackout_dates FOR SELECT
+    USING (true);
+
+CREATE POLICY "Allow service role to manage pickup blackout dates"
+    ON pickup_blackout_dates FOR ALL
+    USING (auth.role() = 'service_role'); 
