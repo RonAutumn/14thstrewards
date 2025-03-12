@@ -1,85 +1,13 @@
 import { Suspense } from "react";
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
-import { cookies } from "next/headers";
-import { Card } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Separator } from "@/components/ui/separator";
-import LoadingSpinner from "@/components/ui/LoadingSpinner";
+import { getServerSideAuth } from "@/lib/auth/server-auth";
+import { LoadingSpinner } from "@/components/ui/loading-spinner";
+import { Sidebar } from "@/components/admin/sidebar";
 
-async function getServerSideAuth() {
-  const cookieStore = cookies();
-  const supabase = createClient(cookieStore);
-
-  try {
-    // Check if user is authenticated
-    const {
-      data: { session },
-      error: sessionError,
-    } = await supabase.auth.getSession();
-
-    if (sessionError) {
-      console.error("Session error:", sessionError);
-      return {
-        isAuthenticated: false,
-        isAdmin: false,
-        error: sessionError.message,
-      };
-    }
-
-    if (!session?.user) {
-      // Not authenticated, redirect to login
-      // Don't redirect if already on the login page to avoid loops
-      const currentPath = new URL(
-        cookieStore.get("next-url")?.value || "/",
-        "http://localhost"
-      ).pathname;
-      if (currentPath !== "/admin/login") {
-        redirect("/admin/login");
-      }
-      return { isAuthenticated: false, isAdmin: false };
-    }
-
-    // Check if user is admin
-    try {
-      const { data: profile, error: profileError } = await supabase
-        .from("profiles")
-        .select("is_admin")
-        .eq("id", session.user.id)
-        .single();
-
-      if (profileError) {
-        console.error("Profile error:", profileError);
-        return {
-          isAuthenticated: true,
-          isAdmin: false,
-          error: profileError.message,
-        };
-      }
-
-      if (!profile?.is_admin) {
-        // User is not an admin, redirect to store
-        redirect("/");
-      }
-
-      return { isAuthenticated: true, isAdmin: true };
-    } catch (error) {
-      console.error("Error checking admin status:", error);
-      return {
-        isAuthenticated: true,
-        isAdmin: false,
-        error: "Failed to verify admin status",
-      };
-    }
-  } catch (error) {
-    console.error("Unexpected error in getServerSideAuth:", error);
-    return {
-      isAuthenticated: false,
-      isAdmin: false,
-      error: "Unexpected authentication error",
-    };
-  }
-}
+export const metadata = {
+  title: 'Admin Dashboard | Heaven High NYC',
+  description: 'Admin dashboard for Heaven High NYC',
+};
 
 export default async function AdminLayout({
   children,
@@ -88,47 +16,14 @@ export default async function AdminLayout({
 }) {
   const auth = await getServerSideAuth();
 
-  // If there was an error or user is not authenticated and not on login page, show error
-  if (auth.error && !auth.isAuthenticated) {
-    const currentPath = new URL(
-      cookies().get("next-url")?.value || "/",
-      "http://localhost"
-    ).pathname;
-    if (currentPath !== "/admin/login") {
-      redirect("/admin/login");
-    }
+  // Redirect if not authenticated or not admin
+  if (!auth.user || !auth.isAdmin) {
+    redirect('/auth/signin?returnTo=/admin');
   }
 
   return (
-    <div className="flex h-screen bg-background">
-      {auth.isAuthenticated && auth.isAdmin && (
-        <div className="w-64 border-r border-border bg-card p-4">
-          <h2 className="mb-4 text-xl font-semibold text-primary">
-            Admin Dashboard
-          </h2>
-          <Separator className="mb-4" />
-          <nav className="space-y-2">
-            <Button variant="ghost" className="w-full justify-start" asChild>
-              <a href="/admin">Dashboard</a>
-            </Button>
-            <Button variant="ghost" className="w-full justify-start" asChild>
-              <a href="/admin/delivery">Delivery Management</a>
-            </Button>
-            <Button variant="ghost" className="w-full justify-start" asChild>
-              <a href="/admin/shipping">Shipping Management</a>
-            </Button>
-            <Button variant="ghost" className="w-full justify-start" asChild>
-              <a href="/admin/pickup">Pickup Management</a>
-            </Button>
-            <Button variant="ghost" className="w-full justify-start" asChild>
-              <a href="/admin/store-management">Store Management</a>
-            </Button>
-            <Button variant="ghost" className="w-full justify-start" asChild>
-              <a href="/admin/rewards">Rewards Management</a>
-            </Button>
-          </nav>
-        </div>
-      )}
+    <div className="flex h-screen bg-gray-100 dark:bg-gray-900">
+      <Sidebar />
       <div className="flex-1 overflow-auto p-6">
         <Suspense
           fallback={

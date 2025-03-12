@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { useSupabase } from "@/lib/providers/supabase-provider";
+import { useAuth } from "@/contexts/AuthContext";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 
 interface RequireAuthProps {
@@ -13,7 +13,7 @@ interface RequireAuthProps {
 
 export function RequireAuth({ children, adminOnly = false }: RequireAuthProps) {
   const router = useRouter();
-  const { user, isLoading, isAdmin } = useSupabase();
+  const { user, isLoading, isAdmin } = useAuth();
 
   useEffect(() => {
     if (!isLoading) {

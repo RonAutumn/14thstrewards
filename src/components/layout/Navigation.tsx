@@ -6,10 +6,11 @@ import { Button } from "@/components/ui/button";
 import { Menu, X, Gift } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState, useEffect } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { rewardsService } from "@/features/rewards/rewards.service";
 import { Badge } from "@/components/ui/badge";
 import { GradientButton } from "@/components/ui/gradient-button";
+import { createClient } from "@/lib/supabase/client";
 
 interface NavigationProps {
   children?: React.ReactNode;
@@ -18,28 +19,97 @@ interface NavigationProps {
 function Navigation({ children }: NavigationProps) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [points, setPoints] = useState<number | null>(null);
+  const [isClient, setIsClient] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const pathname = usePathname();
+  const router = useRouter();
+  const supabase = createClient();
 
   useEffect(() => {
-    const loadUserPoints = async () => {
+    setIsClient(true);
+    const checkAuthAndLoadPoints = async () => {
       try {
-        const userId = localStorage.getItem("user_session");
-        if (userId) {
-          const userPoints = await rewardsService.getUserPoints(userId);
-          setPoints(userPoints);
+        const { data: { session }, error } = await supabase.auth.getSession();
+        
+        if (error) {
+          console.error('Error checking auth session:', error);
+          return;
+        }
+
+        setIsAuthenticated(!!session);
+
+        if (session?.user?.id) {
+          try {
+            const userPoints = await rewardsService.getUserPoints(session.user.id);
+            setPoints(userPoints);
+          } catch (error) {
+            console.error('Failed to load points:', error);
+          }
         }
       } catch (error) {
-        console.error("Failed to load points:", error);
+        console.error('Error in auth check:', error);
       }
     };
 
-    loadUserPoints();
+    checkAuthAndLoadPoints();
+
+    // Subscribe to auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      setIsAuthenticated(!!session);
+      if (session?.user?.id) {
+        try {
+          const userPoints = await rewardsService.getUserPoints(session.user.id);
+          setPoints(userPoints);
+        } catch (error) {
+          console.error('Failed to load points:', error);
+        }
+      } else {
+        setPoints(null);
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
   }, []);
+
+  const handleRewardsClick = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    
+    try {
+        const { data: { session }, error } = await supabase.auth.getSession();
+        
+        if (error) {
+            console.error('Session check error:', error);
+            localStorage.setItem('redirectAfterAuth', '/rewards');
+            router.push('/auth/signin');
+            return;
+        }
+
+        if (!session) {
+            localStorage.setItem('redirectAfterAuth', '/rewards');
+            router.push('/auth/signin');
+            return;
+        }
+
+        // If we have a valid session, navigate to rewards
+        router.push('/rewards');
+    } catch (error) {
+        console.error('Error checking session:', error);
+        localStorage.setItem('redirectAfterAuth', '/rewards');
+        router.push('/auth/signin');
+    }
+  };
 
   const navLinks = [
     { href: "/", label: "Home" },
     { href: "/about", label: "About" },
   ];
+
+  // Don't render anything until we're on the client
+  if (!isClient) {
+    return null;
+  }
 
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -71,22 +141,23 @@ function Navigation({ children }: NavigationProps) {
         {/* Right Section - Rewards and Cart */}
         <div className="flex items-center gap-4">
           {/* Rewards Button */}
-          <Link href="/rewards" className="flex items-center gap-2">
+          <div className="flex items-center gap-2">
             <GradientButton
               asChild
               variant={pathname === "/rewards" ? "variant" : "default"}
+              onClick={handleRewardsClick}
             >
               <div className="flex items-center gap-2">
                 <Gift className="h-4 w-4" />
                 <span>Rewards</span>
-                {points !== null && (
+                {isAuthenticated && points !== null && (
                   <Badge variant="secondary" className="ml-1 bg-white/20">
                     {points} pts
                   </Badge>
                 )}
               </div>
             </GradientButton>
-          </Link>
+          </div>
 
           {/* Cart (if provided) */}
           {children}
@@ -128,7 +199,9 @@ function Navigation({ children }: NavigationProps) {
                   ? "bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-gray-50"
                   : "text-gray-600 dark:text-gray-400"
               )}
-              onClick={() => setIsMobileMenuOpen(false)}
+              onClick={() => {
+                setIsMobileMenuOpen(false);
+              }}
             >
               {link.label}
             </Link>

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import { RootLayoutClient } from "@/components/layout/RootLayoutClient";
-import { SupabaseProvider } from "@/lib/providers/supabase-provider";
+import { AuthProvider } from "@/contexts/AuthContext";
 import { ErrorBoundary } from "@/components/error-boundary";
 
 const inter = Inter({ subsets: ["latin"] });
@@ -17,12 +17,12 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <body className={inter.className}>
         <ErrorBoundary>
-          <SupabaseProvider>
+          <AuthProvider>
             <RootLayoutClient>{children}</RootLayoutClient>
-          </SupabaseProvider>
+          </AuthProvider>
         </ErrorBoundary>
       </body>
     </html>

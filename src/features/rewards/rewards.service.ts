@@ -97,7 +97,7 @@ export const rewardsService = {
 
         try {
             const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
-            const response = await fetch(`${baseUrl}/api/rewards/points/${userId}`);
+            const response = await fetch(`${baseUrl}/api/rewards/users/${userId}`);
             
             if (!response.ok) {
                 const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));

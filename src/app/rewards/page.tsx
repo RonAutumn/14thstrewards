@@ -4,17 +4,12 @@ import { useEffect, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
-import { formatDistance } from "date-fns";
-import { cn } from "@/lib/utils";
-import { getSupabaseBrowserClient } from "@/lib/supabase/browser";
-import { User } from "@supabase/supabase-js";
+import { useAuth } from "@/contexts/AuthContext";
 import Layout from "@/components/layout/Layout";
 import UserProfile from "@/components/rewards/UserProfile";
 import PointsHistory from "@/components/rewards/PointsHistory";
-import { RedeemCode } from "@/components/rewards/RedeemCode";
-import { useCart } from "@/lib/store/cart";
-import { rewardsService } from "@/features/rewards/rewards.service";
 import { UnifiedAuthForm } from "@/components/auth/UnifiedAuthForm";
+import { useRouter } from "next/navigation";
 
 interface Reward {
   reward_id: string;
@@ -29,6 +24,7 @@ interface Reward {
   updatedAt?: string;
 }
 
+// Define the Transaction interface to match what's used in the component
 interface Transaction {
   _id: string;
   user_id: string;
@@ -47,14 +43,14 @@ export default function RewardsPage() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [user, setUser] = useState<User | null>(null);
   const [pendingPoints, setPendingPoints] = useState<number>(0);
   const { toast } = useToast();
-  const { addItem } = useCart();
+  const { user, isLoading: authLoading } = useAuth();
+  const router = useRouter();
 
   const refreshUserData = async (userId: string) => {
     try {
-      console.log('Starting to fetch user data...', { userId });
+      setLoading(true);
       
       const [userResponse, transactionsResponse, rewardsResponse] =
         await Promise.all([
@@ -62,13 +58,6 @@ export default function RewardsPage() {
           fetch(`/api/rewards/transactions/${userId}`),
           fetch(`/api/rewards/available?userId=${userId}`),
         ]);
-
-      // Log response statuses
-      console.log("API Response Status:", {
-        user: userResponse.status,
-        transactions: transactionsResponse.status,
-        rewards: rewardsResponse.status,
-      });
 
       // Handle each response individually to avoid failing everything if one fails
       let userData = { points: 0 };
@@ -105,27 +94,20 @@ export default function RewardsPage() {
         console.error('Error parsing rewards response:', error);
       }
 
-      // Log response data
-      console.log("API Response Data:", {
-        user: { ...userData, id: userId },
-        transactionsCount: transactionsData.pointsHistory?.length || 0,
-        rewardsCount: rewardsData.rewards?.length || 0,
-      });
-
       // Update state with whatever data we successfully retrieved
       setPoints(userData.points || 0);
       setRewards(rewardsData.rewards || []);
 
       // Format transactions
-      const formattedTransactions = transactionsData.pointsHistory?.map((history: any) => ({
+      const formattedTransactions = (transactionsData.pointsHistory?.map((history: any) => ({
         _id: history.id,
         user_id: history.user_id,
         description: history.description || history.source,
         points: history.change_amount,
         type: history.transaction_type,
         created_at: history.created_at,
-        status: "completed",
-      })) || [];
+        status: "completed" as const,
+      })) || []) as Transaction[];
 
       setTransactions(formattedTransactions);
 
@@ -141,97 +123,23 @@ export default function RewardsPage() {
       }, 0);
 
       setPendingPoints(pendingPoints);
-      setLoading(false);
       setError(null);
     } catch (error) {
       console.error("Failed to refresh user data:", error);
       setError(
         error instanceof Error ? error.message : "Failed to load rewards data"
       );
+    } finally {
       setLoading(false);
     }
   };
 
+  // Load user data when authenticated
   useEffect(() => {
-    let mounted = true;
-    let isInitialized = false;
-    
-    const initializeAuth = async () => {
-      if (isInitialized) return;
-      try {
-        console.log('Starting auth initialization...');
-        const supabase = getSupabaseBrowserClient();
-        const {
-          data: { user },
-          error,
-        } = await supabase.auth.getUser();
-        
-        if (error) {
-          console.error('Auth user error:', error);
-          throw error;
-        }
-
-        console.log('Auth user result:', {
-          hasUser: !!user,
-          userId: user?.id,
-          isAuthenticated: !!user
-        });
-
-        if (!mounted) return;
-
-        setUser(user);
-        if (user) {
-          console.log('Fetching data for authenticated user:', user.id);
-          await refreshUserData(user.id);
-        } else {
-          console.log('No authenticated user, setting loading to false');
-          setLoading(false);
-        }
-        isInitialized = true;
-      } catch (error) {
-        console.error('Auth initialization error:', error);
-        if (mounted) {
-          setError("Failed to initialize authentication");
-          setLoading(false);
-        }
-      }
-    };
-
-    initializeAuth();
-
-    // Listen for auth changes with debounce
-    let authChangeTimeout: NodeJS.Timeout;
-    const {
-      data: { subscription },
-    } = getSupabaseBrowserClient().auth.onAuthStateChange(
-      async (_event, session) => {
-        // Clear any pending auth change handler
-        if (authChangeTimeout) {
-          clearTimeout(authChangeTimeout);
-        }
-
-        // Debounce auth changes to prevent rapid re-renders
-        authChangeTimeout = setTimeout(async () => {
-          if (!mounted) return;
-          const user = session?.user ?? null;
-          setUser(user);
-          if (user) {
-            await refreshUserData(user.id);
-          } else {
-            setLoading(false);
-          }
-        }, 1000); // 1 second debounce
-      }
-    );
-
-    return () => {
-      mounted = false;
-      subscription.unsubscribe();
-      if (authChangeTimeout) {
-        clearTimeout(authChangeTimeout);
-      }
-    };
-  }, []);
+    if (user) {
+      refreshUserData(user.id);
+    }
+  }, [user]);
 
   // Add periodic refresh
   useEffect(() => {
@@ -244,6 +152,36 @@ export default function RewardsPage() {
     return () => clearInterval(intervalId);
   }, [user]);
 
+  // Show loading state while auth is being checked
+  if (authLoading) {
+    return (
+      <Layout>
+        <div className="container mx-auto px-4 py-8">
+          <Card className="p-6">
+            <div className="flex items-center justify-center min-h-[200px]">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+            </div>
+          </Card>
+        </div>
+      </Layout>
+    );
+  }
+
+  // Show login form if not authenticated
+  if (!user) {
+    return (
+      <Layout>
+        <div className="container mx-auto px-4 py-8">
+          <Card className="p-6">
+            <h1 className="text-2xl font-bold mb-4">Sign in to view rewards</h1>
+            <UnifiedAuthForm />
+          </Card>
+        </div>
+      </Layout>
+    );
+  }
+
+  // Show loading state while fetching rewards data
   if (loading) {
     return (
       <Layout>
@@ -258,19 +196,7 @@ export default function RewardsPage() {
     );
   }
 
-  if (!user) {
-    return (
-      <Layout>
-        <div className="container mx-auto px-4 py-8">
-          <Card className="p-6">
-            <h1 className="text-2xl font-bold mb-4">Sign in to view rewards</h1>
-            <UnifiedAuthForm />
-          </Card>
-        </div>
-      </Layout>
-    );
-  }
-
+  // Show error state
   if (error) {
     return (
       <Layout>
@@ -278,7 +204,7 @@ export default function RewardsPage() {
           <Card className="p-6">
             <h1 className="text-2xl font-bold text-red-600 mb-4">Error</h1>
             <p>{error}</p>
-            <Button onClick={() => window.location.reload()} className="mt-4">
+            <Button onClick={() => refreshUserData(user.id)} className="mt-4">
               Retry
             </Button>
           </Card>
@@ -287,6 +213,7 @@ export default function RewardsPage() {
     );
   }
 
+  // Show rewards page
   return (
     <Layout className="bg-background">
       <div className="container mx-auto px-4 py-8 space-y-8">
@@ -294,6 +221,7 @@ export default function RewardsPage() {
           points={points}
           pendingPoints={pendingPoints}
           user={user}
+          joinDate={user.created_at ? user.created_at : new Date().toISOString()}
         />
 
         {/* Available Rewards Section */}
@@ -368,7 +296,7 @@ export default function RewardsPage() {
           </div>
         </Card>
 
-        <PointsHistory transactions={transactions} />
+        <PointsHistory transactions={transactions as any} />
       </div>
     </Layout>
   );
