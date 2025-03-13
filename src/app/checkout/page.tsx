@@ -31,7 +31,7 @@ import { cn } from "@/lib/utils";
 import { format, parse } from "date-fns";
 import { CalendarIcon, ArrowLeft, ArrowRight, Loader2 } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { US_STATES, StateSelect } from "@/components/shipping/state-select";
@@ -51,6 +51,7 @@ import { supabaseOrders, type CreateOrderData } from "@/lib/supabase-orders";
 import { DeliverySection } from "@/components/checkout/DeliverySection";
 import type { OrderItem as OrderItemType } from "@/types/orders";
 import type { DeliveryInfo } from "@/components/checkout/DeliverySection";
+import { useAuth } from "@/contexts/AuthContext";
 
 type DeliveryMethod = "pickup" | "delivery" | "shipping";
 
@@ -208,6 +209,7 @@ export default function CheckoutPage() {
     removeRedeemedReward,
     redeemedRewards,
   } = useCart();
+  const { user, session, isLoading: isLoadingAuth } = useAuth();
   const { toast } = useToast();
   const router = useRouter();
 
@@ -215,15 +217,12 @@ export default function CheckoutPage() {
   const [deliveryDays, setDeliveryDays] = useState<any[]>([]);
   const [isClient, setIsClient] = useState(false);
   const [estimatedPoints, setEstimatedPoints] = useState<number>(0);
-  const [deliveryMethod, setDeliveryMethod] =
-    useState<DeliveryMethod>("delivery");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errors, setErrors] = useState<FormErrors>({});
   const [currentStep, setCurrentStep] = useState<Step>("contact");
   const [selectedRate, setSelectedRate] = useState<ShippingRate | null>(null);
   const [paymentPollingInterval, setPaymentPollingInterval] =
     useState<NodeJS.Timeout | null>(null);
-  const [user, setUser] = useState<any>(null);
   const [userPoints, setUserPoints] = useState<number>(0);
   const [availableRewards, setAvailableRewards] = useState<any[]>([]);
   const [availablePickupTimes, setAvailablePickupTimes] = useState<
@@ -267,6 +266,75 @@ export default function CheckoutPage() {
     deliveryMethod: "delivery",
   });
 
+  // Define updateDeliveryFee after formData initialization
+  const updateDeliveryFee = useCallback(async (zipCode: string, subtotal: number) => {
+    console.log('[Checkout] Starting delivery fee update:', { zipCode, subtotal });
+    try {
+      if (!zipCode || formData.deliveryMethod === "shipping") {
+        console.log('[Checkout] Skipping fee update - invalid conditions');
+        setFormData((prev) => ({
+          ...prev,
+          deliveryFee: undefined,
+          freeDeliveryThreshold: undefined,
+          isDeliveryFree: false,
+        }));
+        return;
+      }
+
+      const response = await DeliveryClient.getDeliveryFeeByZipCode(
+        zipCode,
+        subtotal
+      );
+      console.log('[Checkout] Delivery fee response:', response);
+
+      const fee = Number(response.fee);
+      const threshold = Number(response.freeDeliveryThreshold);
+      const isFree = Boolean(response.isDeliveryFree);
+
+      setFormData((prev) => ({
+        ...prev,
+        deliveryFee: fee,
+        shippingFee: selectedRate?.price || 0,
+        freeDeliveryThreshold: threshold,
+        isDeliveryFree: isFree,
+      }));
+
+      console.log('[Checkout] Updated delivery fee:', {
+        fee,
+        threshold,
+        isFree,
+        total: formData.total
+      });
+
+      // Show toast if close to free delivery
+      if (!isFree && threshold > 0) {
+        const remaining = threshold - subtotal;
+        if (remaining > 0) {
+          console.log('[Checkout] Showing free delivery threshold toast');
+          toast({
+            title: "Free Delivery Available",
+            description: `Add ${formatCurrency(
+              remaining
+            )} more to qualify for free delivery!`,
+          });
+        }
+      }
+    } catch (error) {
+      console.error("[Checkout] Error updating delivery fee:", {
+        error: error instanceof Error ? error.message : 'Unknown error',
+        zipCode,
+        subtotal
+      });
+      setFormData((prev) => ({
+        ...prev,
+        deliveryFee: undefined,
+        shippingFee: undefined,
+        freeDeliveryThreshold: undefined,
+        isDeliveryFree: false,
+      }));
+    }
+  }, [formData.deliveryMethod, selectedRate, toast]);
+
   useEffect(() => {
     setIsClient(true);
   }, []);
@@ -286,45 +354,44 @@ export default function CheckoutPage() {
   useEffect(() => {
     // Check if user is logged in and fetch their rewards
     const fetchUserAndRewards = async () => {
-      try {
-        const {
-          data: { user },
-        } = await getSupabaseBrowserClient().auth.getUser();
-        if (user) {
-          setUser(user);
-          try {
-            // Fetch points and rewards separately to handle errors independently
-            try {
-              const points = await rewardsService.getUserPoints(user.id);
-              setUserPoints(points);
-            } catch (error) {
-              console.error("Failed to fetch user points:", error);
-              setUserPoints(0); // Default to 0 points if fetch fails
-            }
+      if (!session?.user) {
+        console.log('[Checkout] No active session for rewards fetch');
+        return;
+      }
 
-            try {
-              const rewards = await rewardsService.getAvailableRewards(user.id);
-              setAvailableRewards(rewards);
-            } catch (error) {
-              console.error("Failed to fetch rewards:", error);
-              setAvailableRewards([]); // Default to empty rewards if fetch fails
-            }
-          } catch (error) {
-            console.error("Failed to fetch rewards data:", error);
-            // Set default values
-            setUserPoints(0);
-            setAvailableRewards([]);
-          }
+      try {
+        console.log('[Checkout] Fetching rewards for user:', session.user.id);
+        
+        // Fetch points and rewards separately to handle errors independently
+        try {
+          const points = await rewardsService.getUserPoints(session.user.id);
+          console.log('[Checkout] User points fetched:', points);
+          setUserPoints(points);
+        } catch (error) {
+          console.error("[Checkout] Failed to fetch user points:", error);
+          setUserPoints(0); // Default to 0 points if fetch fails
+        }
+
+        try {
+          const rewards = await rewardsService.getAvailableRewards(session.user.id);
+          console.log('[Checkout] Available rewards fetched:', rewards.length);
+          setAvailableRewards(rewards);
+        } catch (error) {
+          console.error("[Checkout] Failed to fetch rewards:", error);
+          setAvailableRewards([]); // Default to empty rewards if fetch fails
         }
       } catch (error) {
-        console.error("Error fetching user:", error);
+        console.error("[Checkout] Failed to fetch rewards data:", error);
+        // Set default values
+        setUserPoints(0);
+        setAvailableRewards([]);
       }
     };
 
-    if (isClient) {
+    if (isClient && session) {
       fetchUserAndRewards();
     }
-  }, [isClient]);
+  }, [isClient, session, rewardsService]);
 
   // Calculate estimated points when subtotal changes
   useEffect(() => {
@@ -363,26 +430,11 @@ export default function CheckoutPage() {
       weight: item.weight || 1,
     }));
 
-  // Update fee when delivery method or selected rate changes
-  useEffect(() => {
-    if (deliveryMethod === "delivery" && formData.zipCode) {
-      // Only fetch delivery fee for local delivery
-      updateDeliveryFee(formData.zipCode, subtotal);
-    } else if (deliveryMethod === "pickup") {
-      // Only reset fees for pickup
-      setFormData((prev) => ({
-        ...prev,
-        deliveryFee: undefined,
-        shippingFee: undefined,
-        freeDeliveryThreshold: undefined,
-        isDeliveryFree: false,
-      }));
-    }
-    // Don't reset fees for shipping method
-  }, [deliveryMethod, formData.zipCode, subtotal]);
+  // Use formData.deliveryMethod instead of separate state
+  const deliveryMethod = formData.deliveryMethod;
 
   // Calculate total including appropriate fees
-  const calculateTotal = () => {
+  const calculateTotal = useCallback(() => {
     let total = subtotal;
 
     if (deliveryMethod === "delivery" && formData.deliveryFee) {
@@ -392,13 +444,66 @@ export default function CheckoutPage() {
     }
 
     return total;
-  };
+  }, [subtotal, deliveryMethod, formData.deliveryFee, formData.shippingFee]);
+
+  // Update fee when delivery method or selected rate changes - with proper guards
+  useEffect(() => {
+    // Only run this effect if we have both a delivery method and zip code
+    if (!deliveryMethod || !formData.zipCode) {
+      return;
+    }
+
+    console.log('[Checkout] Delivery method or zip code changed:', {
+      method: deliveryMethod,
+      zipCode: formData.zipCode,
+      currentFee: formData.deliveryFee
+    });
+
+    if (deliveryMethod === "delivery") {
+      // Only update if we don't already have a delivery fee calculated
+      if (formData.deliveryFee === undefined) {
+        console.log('[Checkout] Updating delivery fee');
+        updateDeliveryFee(formData.zipCode, subtotal);
+      }
+    } else if (deliveryMethod === "pickup") {
+      console.log('[Checkout] Resetting delivery fees for pickup');
+      // Reset fees for pickup
+      setFormData((prev) => ({
+        ...prev,
+        deliveryFee: undefined,
+        shippingFee: undefined,
+        freeDeliveryThreshold: undefined,
+        isDeliveryFree: false,
+      }));
+    }
+  }, [deliveryMethod, formData.zipCode, formData.deliveryFee, subtotal, updateDeliveryFee]);
 
   // Update the total whenever relevant values change
   useEffect(() => {
     const newTotal = calculateTotal();
-    setFormData((prev) => ({ ...prev, total: newTotal }));
+    setFormData((prev) => {
+      // Only update if the total has actually changed
+      if (prev.total === newTotal) {
+        return prev;
+      }
+      return { ...prev, total: newTotal };
+    });
   }, [subtotal, formData.deliveryFee, formData.shippingFee, deliveryMethod]);
+
+  // Keep form data items in sync with cart items
+  useEffect(() => {
+    setFormData((prev) => {
+      const newItems = items.map(convertCartItem);
+      // Only update if items have actually changed
+      if (JSON.stringify(prev.items) === JSON.stringify(newItems)) {
+        return prev;
+      }
+      return {
+        ...prev,
+        items: newItems,
+      };
+    });
+  }, [items]);
 
   // Fetch shipping rates when shipping address is complete
   useEffect(() => {
@@ -527,6 +632,7 @@ export default function CheckoutPage() {
   };
 
   const handleDeliveryInfoChange = (info: DeliveryInfo) => {
+    // Update form data with new delivery info
     setFormData(
       (prev: FormData): FormData => ({
         ...prev,
@@ -536,68 +642,15 @@ export default function CheckoutPage() {
         deliveryDate: info.deliveryDate,
         deliveryTime: info.deliveryTime,
         instructions: info.instructions,
-        deliveryFee: Number(info.deliveryFee),
+        deliveryFee: info.deliveryFee,
         freeDeliveryThreshold: info.freeDeliveryThreshold,
         isDeliveryFree: info.isDeliveryFree,
       })
     );
-  };
 
-  const updateDeliveryFee = async (zipCode: string, subtotal: number) => {
-    try {
-      if (!zipCode || formData.deliveryMethod === "shipping") {
-        setFormData(
-          (prev: FormData): FormData => ({
-            ...prev,
-            deliveryFee: undefined,
-            freeDeliveryThreshold: undefined,
-            isDeliveryFree: false,
-          })
-        );
-        return;
-      }
-
-      const response = await DeliveryClient.getDeliveryFeeByZipCode(
-        zipCode,
-        subtotal
-      );
-      const fee = Number(response.fee);
-      const threshold = Number(response.freeDeliveryThreshold);
-      const isFree = Boolean(response.isDeliveryFree);
-
-      setFormData(
-        (prev: FormData): FormData => ({
-          ...prev,
-          deliveryFee: fee,
-          shippingFee: selectedRate?.price || 0,
-          freeDeliveryThreshold: threshold,
-          isDeliveryFree: isFree,
-        })
-      );
-
-      // Show toast if close to free delivery
-      if (!isFree && threshold > 0) {
-        const remaining = threshold - subtotal;
-        if (remaining > 0) {
-          toast({
-            title: "Free Delivery Available",
-            description: `Add ${formatCurrency(
-              remaining
-            )} more to qualify for free delivery!`,
-          });
-        }
-      }
-    } catch (error) {
-      console.error("Error updating delivery fee:", error);
-      setFormData(
-        (prev: FormData): FormData => ({
-          ...prev,
-          deliveryFee: undefined,
-          shippingFee: undefined,
-          freeDeliveryThreshold: undefined,
-          isDeliveryFree: false,
-        })
-      );
+    // If delivery fee is provided in info, don't make another API call
+    if (info.deliveryFee === undefined && info.zipCode && deliveryMethod === "delivery") {
+      updateDeliveryFee(info.zipCode, subtotal);
     }
   };
 
@@ -697,24 +750,26 @@ export default function CheckoutPage() {
     setPaymentPollingInterval(interval);
   };
 
-  // Update the delivery method change handler
+  // Update the delivery method change handler to use formData
   const handleDeliveryMethodChange = async (method: DeliveryMethod) => {
-    setDeliveryMethod(method);
-    if (method === "delivery") {
-      if (formData.zipCode) {
-        await updateDeliveryFee(formData.zipCode, subtotal);
-      }
-    } else {
-      setFormData((prev) => ({
-        ...prev,
-        deliveryFee: undefined,
-        shippingFee: undefined,
-        freeDeliveryThreshold: undefined,
-        isDeliveryFree: false,
-      }));
-      setSelectedRate(null);
+    console.log('[Checkout] Delivery method changed:', { method });
+    
+    setFormData(prev => ({
+      ...prev,
+      deliveryMethod: method,
+      // Reset delivery-related fields when changing methods
+      deliveryFee: undefined,
+      shippingFee: undefined,
+      freeDeliveryThreshold: undefined,
+      isDeliveryFree: false
+    }));
+
+    // Only calculate delivery fee if we have both method and zip code
+    if (method === "delivery" && formData.zipCode) {
+      await updateDeliveryFee(formData.zipCode, subtotal);
     }
-    // Clear any existing errors
+
+    // Reset any existing errors
     setErrors({});
   };
 
@@ -747,118 +802,233 @@ export default function CheckoutPage() {
     setIsSubmitting(true);
 
     try {
+      console.log('[Checkout] Starting checkout process', {
+        deliveryMethod,
+        hasZipCode: Boolean(formData.zipCode),
+        itemCount: formData.items.length,
+        subtotal,
+        total: formData.total
+      });
+      
+      // Check for active session before proceeding
+      if (!session) {
+        console.log('[Checkout] No active session during submission');
+        toast({
+          title: "Session Expired",
+          description: "Please log in again to complete your order",
+          variant: "destructive",
+        });
+        const returnTo = encodeURIComponent('/checkout');
+        router.push(`/auth/signin?returnTo=${returnTo}`);
+        return;
+      }
+
       // Update delivery fee before submitting
       if (formData.zipCode) {
+        console.log('[Checkout] Updating delivery fee for zip:', formData.zipCode);
         await updateDeliveryFee(formData.zipCode, subtotal);
       }
 
       // Validate form data
       const errors = validateForm(formData, deliveryMethod);
       if (Object.keys(errors).length > 0) {
+        console.error('[Checkout] Form validation failed:', {
+          errors,
+          formData: {
+            ...formData,
+            // Exclude sensitive data
+            email: '***',
+            phone: '***'
+          }
+        });
         setErrors(errors);
-        setIsSubmitting(false);
+        toast({
+          title: "Missing Information",
+          description: "Please fill in all required fields",
+          variant: "destructive",
+        });
         return;
       }
 
-      // Create order data based on delivery method
-      let orderData: CreateOrderData;
-      const baseOrderData = {
+      console.log('[Checkout] Form validation passed, checking authentication');
+
+      // Generate order ID first
+      const orderId = generateOrderId();
+
+      // Create pending order in Supabase first
+      const orderData = {
+        order_id: orderId,
+        user_id: session.user.id,
+        order_type: deliveryMethod as 'pickup' | 'delivery' | 'shipping',
         customer_name: formData.name,
         customer_email: formData.email,
         customer_phone: formData.phone,
         items: formData.items.map((item) => ({
-          ...item,
-          unitPrice: item.price,
+          id: item.id,
+          name: item.name,
+          quantity: item.quantity,
+          price: item.price,
+          total: item.price * item.quantity,
+          variation: item.selectedVariation?.name,
           weight: item.weight || 1,
         })),
         total_amount: formData.total,
-        payment_method: formData.paymentMethod || "card",
+        status: 'pending' as const,
+        payment_status: 'pending' as const,
+        payment_method: 'card' as const,
+        ...(deliveryMethod === 'delivery' && {
+          delivery_address: {
+            street: formData.address,
+            city: formData.city,
+            state: 'NY',
+            zip_code: formData.zipCode
+          },
+          delivery_instructions: formData.instructions,
+          delivery_date: formData.deliveryDate?.toISOString(),
+          delivery_time_slot: formData.deliveryTime,
+        }),
+        ...(deliveryMethod === 'shipping' && {
+          shipping_address: {
+            street: formData.shippingAddress,
+            city: formData.shippingCity,
+            state: formData.shippingState,
+            zip_code: formData.shippingZip
+          },
+          shipping_method: formData.shippingMethod,
+          shipping_cost: selectedRate?.price || 0,
+          shipping_carrier: selectedRate?.carrier,
+          shipping_rates: selectedRate ? [selectedRate] : undefined
+        }),
+        ...(deliveryMethod === 'pickup' && {
+          pickup_date: formData.pickupDate?.toISOString(),
+          pickup_time: formData.pickupTime,
+          pickup_notes: formData.instructions,
+        })
       };
 
-      switch (deliveryMethod) {
-        case "pickup":
-          orderData = {
-            ...baseOrderData,
-            order_type: "pickup",
-            pickup_date: formData.pickupDate?.toISOString() || "",
-            pickup_time: formData.pickupTime,
-            pickup_notes: formData.instructions,
-          };
-          break;
+      console.log('[Checkout] Creating pending order in Supabase', {
+        orderId,
+        orderType: orderData.order_type,
+        itemCount: orderData.items.length,
+        total: orderData.total_amount
+      });
 
-        case "delivery":
-          orderData = {
-            ...baseOrderData,
-            order_type: "delivery",
-            delivery_address: {
+      try {
+        const order = await supabaseOrders.createOrder(orderData);
+        console.log('[Checkout] Pending order created:', {
+          orderId: order.order_id,
+          status: order.status
+        });
+      } catch (error) {
+        console.error('[Checkout] Failed to create order:', {
+          error: error instanceof Error ? error.message : 'Unknown error',
+          details: error instanceof Error ? error.cause : undefined
+        });
+        toast({
+          title: "Order Creation Failed",
+          description: "There was an error creating your order. Please try again.",
+          variant: "destructive",
+        });
+        setIsSubmitting(false);
+        return;
+      }
+
+      // Prepare the checkout payload for Stripe
+      const checkoutPayload = {
+        orderId,
+        customerName: formData.name,
+        customerEmail: formData.email,
+        customerPhone: formData.phone,
+        userId: user?.id,
+        items: formData.items,
+        total: formData.total,
+        deliveryMethod,
+        address: deliveryMethod === "delivery"
+          ? {
               street: formData.address,
               city: formData.city,
               state: "NY",
-              zip_code: formData.zipCode,
-            },
-            delivery_instructions: formData.instructions,
-            delivery_date: formData.deliveryDate?.toISOString() || "",
-            delivery_time_slot: formData.deliveryTime,
-          };
-          break;
-
-        case "shipping":
-          orderData = {
-            ...baseOrderData,
-            order_type: "shipping",
-            shipping_address: {
+              zipCode: formData.zipCode,
+            }
+          : deliveryMethod === "shipping"
+          ? {
               street: formData.shippingAddress,
               city: formData.shippingCity,
               state: formData.shippingState,
-              zip_code: formData.shippingZip,
-              country: "US",
-            },
-            shipping_method: formData.shippingMethod,
-            shipping_cost: selectedRate?.price || 0,
-          };
-          break;
+              zipCode: formData.shippingZip,
+            }
+          : null,
+        deliveryDateTime: formData.deliveryDate
+          ? format(formData.deliveryDate, "yyyy-MM-dd HH:mm:ss")
+          : undefined,
+        pickupDateTime: formData.pickupDate
+          ? format(formData.pickupDate, "yyyy-MM-dd HH:mm:ss")
+          : undefined,
+        selectedRate,
+        instructions: formData.instructions,
+        paymentMethod: "card"
+      };
 
-        default:
-          throw new Error("Invalid delivery method");
-      }
+      console.log('[Checkout] Initiating Stripe checkout', {
+        orderId,
+        deliveryMethod,
+        hasAddress: Boolean(checkoutPayload.address)
+      });
 
-      // Create order in Supabase
-      const order = await supabaseOrders.createOrder(orderData);
-
-      if (formData.paymentMethod === "card") {
-        // Handle card payment
-        const paymentResponse = await fetch("/api/payments/create", {
+      let paymentResponse;
+      try {
+        paymentResponse = await fetch("/api/checkout", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            orderId: order.order_id,
-            amount: formData.total,
-            customerEmail: formData.email,
-          }),
+          body: JSON.stringify(checkoutPayload),
         });
 
         if (!paymentResponse.ok) {
-          throw new Error("Failed to create payment");
+          const errorData = await paymentResponse.json();
+          console.error('[Checkout] Checkout API error:', {
+            status: paymentResponse.status,
+            statusText: paymentResponse.statusText,
+            error: errorData
+          });
+          throw new Error(errorData.error || "Failed to create payment");
         }
 
-        const { paymentUrl } = await paymentResponse.json();
-        handlePaymentRedirect(paymentUrl);
-      } else {
-        // Handle cash payment - redirect to order confirmation
-        router.push(`/order-confirmation/${order.order_id}`);
-      }
+        const { redirectUrl } = await paymentResponse.json();
+        if (!redirectUrl) {
+          console.error('[Checkout] Missing redirect URL in response');
+          throw new Error('No redirect URL received');
+        }
 
-      // Clear cart after successful order creation
-      clearCart();
+        // Store the order ID in localStorage for reference
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('lastOrderId', orderId);
+          console.log('[Checkout] Stored order ID in localStorage:', orderId);
+        }
+
+        console.log('[Checkout] Redirecting to Stripe checkout:', redirectUrl);
+        window.location.href = redirectUrl;
+      } catch (error) {
+        console.error("[Checkout] Error processing payment:", {
+          error: error instanceof Error ? error.message : 'Unknown error',
+          stack: error instanceof Error ? error.stack : undefined
+        });
+        toast({
+          title: "Payment Processing Failed",
+          description: error instanceof Error ? error.message : "Failed to process payment. Please try again.",
+          variant: "destructive",
+        });
+        setIsSubmitting(false);
+      }
     } catch (error) {
-      console.error("Error submitting form:", error);
+      console.error("[Checkout] Error processing payment:", {
+        error: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined
+      });
       toast({
         title: "Error",
-        description: "Failed to submit order. Please try again.",
+        description: error instanceof Error ? error.message : "Failed to process payment. Please try again.",
         variant: "destructive",
       });
-    } finally {
-      setIsSubmitting(false);
     }
   };
 
@@ -922,10 +1092,23 @@ export default function CheckoutPage() {
   };
 
   const handleRewardRedeem = async (reward: any) => {
-    try {
-      if (!user) return;
+    if (!session?.user) {
+      console.error('[Checkout] Attempted to redeem reward without active session');
+      toast({
+        title: "Authentication Required",
+        description: "Please log in to redeem rewards",
+        variant: "destructive",
+      });
+      return;
+    }
 
-      await rewardsService.redeemReward(user.id, reward.reward_id);
+    try {
+      console.log('[Checkout] Redeeming reward:', {
+        rewardId: reward.reward_id,
+        userId: session.user.id
+      });
+
+      await rewardsService.redeemReward(session.user.id, reward.reward_id);
       addRedeemedReward(reward.reward_id);
 
       // Add the redeemed item to cart with proper type
@@ -942,7 +1125,8 @@ export default function CheckoutPage() {
       addItem(rewardItem);
 
       // Refresh points after redemption
-      const newPoints = await rewardsService.getUserPoints(user.id);
+      const newPoints = await rewardsService.getUserPoints(session.user.id);
+      console.log('[Checkout] Points updated after redemption:', newPoints);
       setUserPoints(newPoints);
 
       toast({
@@ -950,7 +1134,10 @@ export default function CheckoutPage() {
         description: `${reward.name} has been applied to your order!`,
       });
     } catch (error) {
-      console.error("Failed to redeem reward:", error);
+      console.error("[Checkout] Failed to redeem reward:", {
+        error: error instanceof Error ? error.message : 'Unknown error',
+        rewardId: reward.reward_id
+      });
       toast({
         title: "Error",
         description: "Failed to apply reward. Please try again.",
@@ -960,8 +1147,21 @@ export default function CheckoutPage() {
   };
 
   const handleRewardRemove = async (reward: any) => {
+    if (!session?.user) {
+      console.error('[Checkout] Attempted to remove reward without active session');
+      toast({
+        title: "Authentication Required",
+        description: "Please log in to manage rewards",
+        variant: "destructive",
+      });
+      return;
+    }
+
     try {
-      if (!user) return;
+      console.log('[Checkout] Removing reward:', {
+        rewardId: reward.reward_id,
+        userId: session.user.id
+      });
 
       // Remove the reward from redeemed rewards
       removeRedeemedReward(reward.reward_id);
@@ -970,7 +1170,8 @@ export default function CheckoutPage() {
       removeItem(reward.reward_id);
 
       // Refresh points
-      const newPoints = await rewardsService.getUserPoints(user.id);
+      const newPoints = await rewardsService.getUserPoints(session.user.id);
+      console.log('[Checkout] Points updated after removal:', newPoints);
       setUserPoints(newPoints);
 
       toast({
@@ -978,7 +1179,10 @@ export default function CheckoutPage() {
         description: `${reward.name} has been removed from your order.`,
       });
     } catch (error) {
-      console.error("Failed to remove reward:", error);
+      console.error("[Checkout] Failed to remove reward:", {
+        error: error instanceof Error ? error.message : 'Unknown error',
+        rewardId: reward.reward_id
+      });
       toast({
         title: "Error",
         description: "Failed to remove reward. Please try again.",
@@ -989,7 +1193,13 @@ export default function CheckoutPage() {
 
   const handlePaymentRedirect = (redirectUrl: string) => {
     if (typeof window !== "undefined") {
-      window.location.href = redirectUrl;
+      // Use router.push for internal URLs, window.location.href for external URLs
+      if (redirectUrl.startsWith(window.location.origin)) {
+        router.push(redirectUrl);
+      } else {
+        // For external URLs (like Stripe checkout), use window.location.href
+        window.location.href = redirectUrl;
+      }
     }
   };
 
@@ -1017,19 +1227,9 @@ export default function CheckoutPage() {
     if (!formData.zipCode) return;
 
     try {
-      const [days, feeInfo] = await Promise.all([
-        DeliveryClient.getDeliveryDays(formData.zipCode),
-        DeliveryClient.getDeliveryFeeByZipCode(formData.zipCode, subtotal),
-      ]);
-
+      // Only fetch delivery days, don't fetch fee here since it's handled elsewhere
+      const days = await DeliveryClient.getDeliveryDays(formData.zipCode);
       setDeliveryDays(days);
-      setFormData((prev) => ({
-        ...prev,
-        deliveryFee: feeInfo.fee,
-        shippingFee: feeInfo.shippingFee,
-        freeDeliveryThreshold: feeInfo.freeDeliveryThreshold,
-        isDeliveryFree: feeInfo.isDeliveryFree,
-      }));
     } catch (error) {
       console.error("Error fetching delivery information:", error);
       toast({
@@ -1150,6 +1350,36 @@ export default function CheckoutPage() {
 
     fetchStoreSettings();
   }, []);
+
+  // Remove the session check effect and replace with this simpler version
+  useEffect(() => {
+    if (!isLoadingAuth) {
+      if (!session) {
+        console.log('[Checkout] No active session, redirecting to signin');
+        const currentPath = '/checkout';
+        const redirectUrl = `/auth/signin?redirectTo=${encodeURIComponent(currentPath)}`;
+        localStorage.setItem('checkoutRedirect', 'true');
+        router.push(redirectUrl);
+        return;
+      }
+    }
+  }, [isLoadingAuth, session, router]);
+
+  if (isLoadingAuth) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="flex flex-col items-center gap-4">
+          <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent"></div>
+          <p className="text-muted-foreground">Verifying your session...</p>
+          <p className="text-sm text-muted-foreground">This should only take a moment.</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!session) {
+    return null;
+  }
 
   return (
     <div className="container mx-auto p-4">
@@ -1709,7 +1939,7 @@ export default function CheckoutPage() {
                                       cell: "h-9 w-full p-0 relative flex items-center justify-center",
                                       day: cn(
                                         "h-9 w-9 p-0 font-normal text-[15px] rounded-md",
-                                        "aria-selected:opacity-100 hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground",
+                                        "aria-selected:opacity-100 hover:bg-accent hover:text-accent-foreground",
                                         "data-[today]:bg-accent/50 data-[disabled]:opacity-50 data-[disabled]:pointer-events-none"
                                       ),
                                       day_selected:
@@ -1847,35 +2077,23 @@ export default function CheckoutPage() {
                       <ArrowLeft className="w-4 h-4" />
                       Back
                     </Button>
-                    <div className="flex gap-2">
-                      {deliveryMethod !== "shipping" && (
-                        <Button
-                          type="button"
-                          onClick={(e) => handleSubmit(e)}
-                          disabled={isSubmitting}
-                          variant="secondary"
-                        >
-                          Pay with Cash
-                        </Button>
+                    <Button
+                      type="submit"
+                      disabled={isSubmitting}
+                      className="flex items-center gap-2"
+                    >
+                      {isSubmitting ? (
+                        <>
+                          <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                          <span>Processing...</span>
+                        </>
+                      ) : (
+                        <>
+                          Continue to Payment
+                          <ArrowRight className="w-4 h-4" />
+                        </>
                       )}
-                      <Button
-                        type="submit"
-                        disabled={isSubmitting}
-                        className="flex items-center gap-2"
-                      >
-                        {isSubmitting ? (
-                          <>
-                            <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                            <span>Processing...</span>
-                          </>
-                        ) : (
-                          <>
-                            Continue to Payment
-                            <ArrowRight className="w-4 h-4" />
-                          </>
-                        )}
-                      </Button>
-                    </div>
+                    </Button>
                   </CardFooter>
                 </Card>
               )}
@@ -1900,9 +2118,6 @@ function validateForm(
   if (deliveryMethod === "delivery") {
     if (!formData.address?.trim()) {
       errors.address = "Address is required";
-    }
-    if (!formData.city?.trim()) {
-      errors.city = "City is required";
     }
     if (!formData.zipCode?.trim()) {
       errors.zipCode = "ZIP code is required";
@@ -1959,10 +2174,6 @@ function validateContactInfo(formData: FormData): FormErrors {
     )
   ) {
     errors.phone = "Please enter a valid phone number";
-  }
-
-  if (formData.zipCode && !/^\d{5}$/.test(formData.zipCode)) {
-    errors.zipCode = "Please enter a valid 5-digit ZIP code";
   }
 
   return errors;

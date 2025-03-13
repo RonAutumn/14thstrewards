@@ -15,32 +15,41 @@ export async function POST(request: Request) {
 
         // Format order data for Supabase
         const formattedOrderData: CreateOrderData = {
+            order_id: orderId,
             order_type: orderData.orderType,
             customer_name: `${orderData.firstName} ${orderData.lastName}`,
             customer_email: orderData.email,
             customer_phone: orderData.phone,
             items: orderData.items,
-            subtotal: orderData.subtotal,
-            total: orderData.total,
+            total_amount: orderData.total,
+            status: 'pending',
+            payment_status: 'pending',
             payment_method: orderData.paymentMethod || 'card',
-            instructions: orderData.instructions,
 
             // Type-specific fields
             ...(orderData.orderType === 'delivery' && {
-                address: orderData.address,
-                borough: orderData.borough,
-                zip_code: orderData.zipCode,
-                delivery_fee: orderData.deliveryFee
+                delivery_address: {
+                    street: orderData.address,
+                    borough: orderData.borough,
+                    zip_code: orderData.zipCode
+                },
+                delivery_instructions: orderData.instructions,
+                delivery_date: orderData.deliveryDate ? new Date(orderData.deliveryDate).toISOString() : undefined,
+                delivery_time_slot: orderData.deliveryTime
             }),
             ...(orderData.orderType === 'shipping' && {
-                address: orderData.shippingAddress,
-                city: orderData.shippingCity,
-                state: orderData.shippingState,
-                zip_code: orderData.shippingZip
+                shipping_address: {
+                    street: orderData.shippingAddress,
+                    city: orderData.shippingCity,
+                    state: orderData.shippingState,
+                    zip_code: orderData.shippingZip
+                },
+                shipping_cost: orderData.shippingCost
             }),
             ...(orderData.orderType === 'pickup' && {
-                pickup_date: orderData.pickupDate && new Date(orderData.pickupDate),
-                pickup_time: orderData.pickupTime
+                pickup_date: orderData.pickupDate ? new Date(orderData.pickupDate).toISOString() : undefined,
+                pickup_time: orderData.pickupTime,
+                pickup_notes: orderData.instructions
             })
         };
 

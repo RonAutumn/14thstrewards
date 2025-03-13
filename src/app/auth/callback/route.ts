@@ -57,10 +57,10 @@ export async function GET(request: Request) {
         }
       }
       
-      // Default to /rewards if no returnTo is specified
+      // Default to homepage if no returnTo is specified
       const redirectUrl = returnTo 
         ? decodeURIComponent(returnTo)
-        : '/rewards'
+        : '/'
 
       return NextResponse.redirect(new URL(redirectUrl, requestUrl.origin))
     } catch (error) {

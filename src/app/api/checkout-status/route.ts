@@ -124,68 +124,58 @@ async function updateOrderStatus(orderId: string, status: string, orderData: any
     try {
         console.log('Processing order status:', { orderId, status, orderData });
 
-        // Only create Supabase record if payment is confirmed
+        // Update order status in Supabase if payment is confirmed
         if (status === 'paid' || status === 'completed' || status === 'success') {
-            const { deliveryMethod, paymentMethod } = orderData;
-
-            // Format order data for Supabase
-            const formattedOrderData: CreateOrderData = {
-                order_type: deliveryMethod,
-                customer_name: orderData.customerName || '',
-                customer_email: orderData.customerEmail,
-                customer_phone: orderData.customerPhone || '',
-                items: orderData.items,
-                subtotal: orderData.subtotal || orderData.items.reduce((acc, item) => acc + (item.price * item.quantity), 0),
-                total: orderData.total,
-                payment_method: paymentMethod || 'card',
-                instructions: orderData.instructions,
-
-                // Type-specific fields
-                ...(deliveryMethod === 'delivery' && {
-                    address: orderData.address?.street || '',
-                    borough: orderData.address?.borough || '',
-                    zip_code: orderData.address?.zipCode || '',
-                    delivery_fee: orderData.deliveryFee || 0
-                }),
-                ...(deliveryMethod === 'shipping' && {
-                    address: orderData.shippingAddress,
-                    city: orderData.shippingCity,
-                    state: orderData.shippingState,
-                    zip_code: orderData.shippingZip
-                }),
-                ...(deliveryMethod === 'pickup' && {
-                    pickup_date: orderData.pickupDate && new Date(orderData.pickupDate),
-                    pickup_time: orderData.pickupTime
-                })
-            };
-
             try {
-                // Create order in Supabase
-                const order = await supabaseOrders.createOrder(formattedOrderData);
+                // Update order status and payment status in Supabase
+                await supabaseOrders.updateOrderStatus(orderId, 'confirmed');
+                await supabaseOrders.updatePaymentStatus(orderId, 'paid');
 
                 // Calculate points (this logic should be moved to a separate service)
                 const pointsEarned = Math.floor(orderData.total);
                 const totalPoints = (orderData.currentPoints || 0) + pointsEarned;
-                const pendingPoints = paymentMethod === 'cash' ? pointsEarned : 0;
+                const pendingPoints = 0; // Card payments are confirmed immediately
 
                 return {
                     success: true,
-                    message: paymentMethod === 'cash' ? 'Cash order created (pending)' : 'Order created and completed',
-                    orderType: deliveryMethod,
+                    message: 'Order updated and completed',
                     orderId,
                     orderData: {
                         ...orderData,
                         pointsEarned,
                         totalPoints,
                         pendingPoints,
-                        status: paymentMethod === 'cash' ? 'pending' : 'completed'
+                        status: 'completed'
                     }
                 };
             } catch (error) {
                 console.error('Supabase error:', error);
                 return {
                     success: false,
-                    message: 'Failed to create order in Supabase',
+                    message: 'Failed to update order in Supabase',
+                    orderId
+                };
+            }
+        } else if (status === 'failed' || status === 'cancelled') {
+            try {
+                // Update order status and payment status for failed payments
+                await supabaseOrders.updateOrderStatus(orderId, 'cancelled');
+                await supabaseOrders.updatePaymentStatus(orderId, 'failed');
+
+                return {
+                    success: true,
+                    message: 'Order marked as cancelled',
+                    orderId,
+                    orderData: {
+                        ...orderData,
+                        status: 'cancelled'
+                    }
+                };
+            } catch (error) {
+                console.error('Supabase error:', error);
+                return {
+                    success: false,
+                    message: 'Failed to update order status',
                     orderId
                 };
             }

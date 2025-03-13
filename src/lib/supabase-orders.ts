@@ -14,14 +14,18 @@ export type PaymentMethod = 'cash' | 'card' | 'other';
 
 // Base order data interface
 interface BaseOrderData {
+  order_id: string;
+  order_type: OrderType;
+  status?: OrderStatus;
+  payment_status?: PaymentStatus;
   customer_name: string;
   customer_email: string;
   customer_phone?: string;
   items: OrderItem[];
   total_amount: number;
-  payment_method?: PaymentMethod;
-  payment_status?: PaymentStatus;
-  status?: OrderStatus;
+  payment_method?: string;
+  payment_intent_id?: string;
+  payment_receipt_url?: string;
 }
 
 // Pickup specific fields
@@ -37,8 +41,7 @@ interface DeliveryOrderData extends BaseOrderData {
   order_type: 'delivery';
   delivery_address: {
     street: string;
-    city: string;
-    state: string;
+    borough: string;
     zip_code: string;
   };
   delivery_instructions?: string;
@@ -54,11 +57,10 @@ interface ShippingOrderData extends BaseOrderData {
     city: string;
     state: string;
     zip_code: string;
-    country?: string;
   };
+  shipping_cost?: number;
   shipping_carrier?: string;
   shipping_method?: string;
-  shipping_cost?: number;
   tracking_number?: string;
   shipping_label_url?: string;
 }
@@ -75,23 +77,47 @@ export interface ShippingRateInfo {
 
 // Helper function to validate order data based on type
 function validateOrderData(data: CreateOrderData): void {
+  console.log('[Supabase Orders] Validating order data:', {
+    type: data.order_type,
+    hasCustomerName: Boolean(data.customer_name),
+    hasCustomerEmail: Boolean(data.customer_email),
+    itemCount: data.items?.length,
+    hasTotal: Boolean(data.total_amount)
+  });
+
   if (!data.customer_name || !data.customer_email || !data.items.length || !data.total_amount) {
+    console.error('[Supabase Orders] Validation failed: Missing required fields');
     throw new Error('Missing required fields');
   }
 
   switch (data.order_type) {
     case 'pickup':
+      console.log('[Supabase Orders] Validating pickup order:', {
+        hasPickupDate: Boolean(data.pickup_date),
+        hasPickupTime: Boolean(data.pickup_time)
+      });
       if (!data.pickup_date || !data.pickup_time) {
+        console.error('[Supabase Orders] Validation failed: Missing pickup fields');
         throw new Error('Pickup orders require pickup date and time');
       }
       break;
     case 'delivery':
+      console.log('[Supabase Orders] Validating delivery order:', {
+        hasAddress: Boolean(data.delivery_address),
+        hasDate: Boolean(data.delivery_date),
+        hasTimeSlot: Boolean(data.delivery_time_slot)
+      });
       if (!data.delivery_address || !data.delivery_date || !data.delivery_time_slot) {
+        console.error('[Supabase Orders] Validation failed: Missing delivery fields');
         throw new Error('Delivery orders require address, date, and time slot');
       }
       break;
     case 'shipping':
+      console.log('[Supabase Orders] Validating shipping order:', {
+        hasAddress: Boolean(data.shipping_address)
+      });
       if (!data.shipping_address) {
+        console.error('[Supabase Orders] Validation failed: Missing shipping address');
         throw new Error('Shipping orders require complete shipping address');
       }
       break;
@@ -100,14 +126,66 @@ function validateOrderData(data: CreateOrderData): void {
 
 export const supabaseOrders = {
   async createOrder(orderData: CreateOrderData) {
-    const { data, error } = await supabaseClient
-      .from('orders')
-      .insert([orderData])
-      .select()
-      .single();
+    console.log('[Supabase Orders] Creating order:', {
+      type: orderData.order_type,
+      customerEmail: orderData.customer_email,
+      itemCount: orderData.items.length,
+      total: orderData.total_amount
+    });
 
-    if (error) throw error;
-    return data;
+    try {
+      // Validate order data first
+      validateOrderData(orderData);
+
+      // Ensure required fields have correct types
+      const formattedOrderData = {
+        ...orderData,
+        status: orderData.status || 'pending',
+        payment_status: orderData.payment_status || 'pending',
+        items: Array.isArray(orderData.items) ? orderData.items : [],
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        // Ensure addresses are stored as JSONB
+        ...(orderData.order_type === 'delivery' && {
+          delivery_address: orderData.delivery_address ? JSON.stringify(orderData.delivery_address) : null
+        }),
+        ...(orderData.order_type === 'shipping' && {
+          shipping_address: orderData.shipping_address ? JSON.stringify(orderData.shipping_address) : null,
+          shipping_rates: orderData.shipping_rates ? JSON.stringify(orderData.shipping_rates) : null
+        })
+      };
+
+      console.log('[Supabase Orders] Order data formatted, inserting into database');
+
+      const { data, error } = await supabaseClient
+        .from('orders')
+        .insert([formattedOrderData])
+        .select()
+        .single();
+
+      if (error) {
+        console.error('[Supabase Orders] Error creating order:', {
+          error: error.message,
+          details: error.details,
+          hint: error.hint
+        });
+        throw error;
+      }
+
+      console.log('[Supabase Orders] Order created successfully:', {
+        orderId: data.order_id,
+        status: data.status,
+        paymentStatus: data.payment_status
+      });
+
+      return data;
+    } catch (error) {
+      console.error('[Supabase Orders] Error in createOrder:', {
+        error: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined
+      });
+      throw error;
+    }
   },
 
   // Get order by ID

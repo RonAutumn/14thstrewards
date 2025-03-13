@@ -1,6 +1,6 @@
 import { ShippingFormData } from "@/features/cart/types";
 
-export type OrderStatus = 'pending' | 'processing' | 'shipped' | 'delivered' | 'cancelled' | 'refunded' | 'failed' | 'on-hold';
+export type OrderStatus = 'pending' | 'processing' | 'completed' | 'cancelled' | 'refunded';
 
 export interface OrderItem {
   id: string;

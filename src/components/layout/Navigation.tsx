@@ -29,6 +29,11 @@ function Navigation({ children }: NavigationProps) {
     setIsClient(true);
     const checkAuthAndLoadPoints = async () => {
       try {
+        if (!supabase) {
+          console.error('Supabase client not initialized');
+          return;
+        }
+        
         const { data: { session }, error } = await supabase.auth.getSession();
         
         if (error) {
@@ -54,29 +59,38 @@ function Navigation({ children }: NavigationProps) {
     checkAuthAndLoadPoints();
 
     // Subscribe to auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      setIsAuthenticated(!!session);
-      if (session?.user?.id) {
-        try {
-          const userPoints = await rewardsService.getUserPoints(session.user.id);
-          setPoints(userPoints);
-        } catch (error) {
-          console.error('Failed to load points:', error);
+    if (supabase) {
+      const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+        setIsAuthenticated(!!session);
+        if (session?.user?.id) {
+          try {
+            const userPoints = await rewardsService.getUserPoints(session.user.id);
+            setPoints(userPoints);
+          } catch (error) {
+            console.error('Failed to load points:', error);
+          }
+        } else {
+          setPoints(null);
         }
-      } else {
-        setPoints(null);
-      }
-    });
+      });
 
-    return () => {
-      subscription.unsubscribe();
-    };
+      return () => {
+        subscription.unsubscribe();
+      };
+    }
   }, []);
 
   const handleRewardsClick = async (e: React.MouseEvent) => {
     e.preventDefault();
     
     try {
+        if (!supabase) {
+          console.error('Supabase client not initialized');
+          localStorage.setItem('redirectAfterAuth', '/rewards');
+          router.push('/auth/signin');
+          return;
+        }
+        
         const { data: { session }, error } = await supabase.auth.getSession();
         
         if (error) {

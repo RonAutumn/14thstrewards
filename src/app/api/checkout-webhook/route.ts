@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
-import { base, TABLES } from '@/lib/airtable';
 import { headers } from 'next/headers';
+import { supabaseOrders } from '@/lib/supabase-orders';
 
 // Verify webhook signature
 function verifyWebhookSignature(signature: string | null, body: string): boolean {
@@ -23,108 +23,83 @@ export async function POST(request: Request) {
         }
 
         const payload = JSON.parse(body);
-        console.log('Received webhook:', payload);
+        console.log('[Checkout Webhook] Received webhook:', payload);
 
         // Validate required fields
         if (!payload.orderId || !payload.status) {
+            console.error('[Checkout Webhook] Missing required fields:', payload);
             return NextResponse.json(
                 { error: 'Missing required fields' },
                 { status: 400 }
             );
         }
 
-        // Find the order in all tables
-        const tables = [TABLES.DELIVERY_ORDERS, TABLES.SHIPPING_ORDERS, TABLES.PICKUP_ORDERS];
-        let orderRecord = null;
-        let tableName = '';
+        // Update order status in Supabase
+        try {
+            console.log('[Checkout Webhook] Updating order status:', {
+                orderId: payload.orderId,
+                status: payload.status
+            });
 
-        for (const table of tables) {
-            try {
-                const records = await base(table).select({
-                    filterByFormula: `{Order ID} = '${payload.orderId}'`
-                }).firstPage();
+            // Map webhook status to order status
+            const orderStatus = 
+                payload.status === 'completed' || payload.status === 'success' ? 'completed' :
+                payload.status === 'failed' || payload.status === 'error' ? 'cancelled' :
+                payload.status === 'processing' ? 'processing' :
+                'pending';
+            
+            // Map webhook status to payment status
+            const paymentStatus = 
+                payload.status === 'completed' || payload.status === 'success' ? 'paid' :
+                payload.status === 'failed' || payload.status === 'error' ? 'failed' :
+                'pending';
 
-                if (records.length > 0) {
-                    orderRecord = records[0];
-                    tableName = table;
-                    console.log('Found order in table:', table);
-                    break;
-                }
-            } catch (error) {
-                console.error(`Error searching table ${table}:`, error);
+            console.log('[Checkout Webhook] Mapped status:', {
+                originalStatus: payload.status,
+                orderStatus,
+                paymentStatus
+            });
+
+            // Update both order status and payment status
+            await supabaseOrders.updateOrderStatus(payload.orderId, orderStatus);
+            await supabaseOrders.updatePaymentStatus(payload.orderId, paymentStatus);
+
+            // Call the checkout-status endpoint to handle email notifications
+            const statusUpdateResponse = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL}/api/checkout-status`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    orderId: payload.orderId,
+                    status: payload.status === 'completed' ? 'success' : payload.status,
+                    message: payload.message
+                })
+            });
+
+            if (!statusUpdateResponse.ok) {
+                console.error('[Checkout Webhook] Failed to trigger status update:', await statusUpdateResponse.text());
             }
-        }
 
-        if (!orderRecord) {
+            console.log('[Checkout Webhook] Order updated successfully:', {
+                orderId: payload.orderId,
+                orderStatus,
+                paymentStatus
+            });
+
+            return NextResponse.json({
+                success: true,
+                message: 'Order status updated successfully'
+            });
+        } catch (error) {
+            console.error('[Checkout Webhook] Error updating order:', error);
             return NextResponse.json(
-                { error: 'Order not found' },
-                { status: 404 }
+                { error: 'Failed to update order status' },
+                { status: 500 }
             );
         }
-
-        // Update order status with retry logic
-        const maxRetries = 2;
-        let lastError = null;
-
-        for (let attempt = 0; attempt < maxRetries; attempt++) {
-            try {
-                await base(tableName).update([{
-                    id: orderRecord.id,
-                    fields: {
-                        "Status": payload.status === 'completed' ? 'paid' : 
-                            payload.status === 'failed' ? 'failed' : 'pending',
-                        "Payment Method": payload.paymentMethod || 'stripe',
-                        "Last Updated": new Date().toISOString(),
-                        "Status Message": payload.message || '',
-                        "Sister Site Verified": true,
-                        "Sister Site Verification Time": new Date().toISOString(),
-                        "Payment ID": payload.paymentId || '',
-                        "Transaction ID": payload.transactionId || ''
-                    }
-                }]);
-
-                // Call the checkout-status endpoint to handle email notifications
-                const statusUpdateResponse = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL}/api/checkout-status`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        orderId: payload.orderId,
-                        status: payload.status === 'completed' ? 'success' : payload.status,
-                        message: payload.message
-                    })
-                });
-
-                if (!statusUpdateResponse.ok) {
-                    console.error('Failed to trigger status update:', await statusUpdateResponse.text());
-                }
-
-                return NextResponse.json({
-                    success: true,
-                    message: 'Order status updated successfully'
-                });
-
-            } catch (error) {
-                console.error(`Error in webhook handler (attempt ${attempt + 1}):`, error);
-                lastError = error;
-                
-                if (attempt < maxRetries - 1) {
-                    // Wait before retrying, with exponential backoff
-                    await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1000));
-                }
-            }
-        }
-
-        // If we get here, all retries failed
-        console.error('All retry attempts failed:', lastError);
-        return NextResponse.json(
-            { error: 'Failed to update order status after multiple attempts' },
-            { status: 500 }
-        );
-
     } catch (error) {
-        console.error('Error processing webhook:', error);
+        console.error('[Checkout Webhook] Error processing webhook:', error);
         return NextResponse.json(
             { error: 'Failed to process webhook' },
             { status: 500 }

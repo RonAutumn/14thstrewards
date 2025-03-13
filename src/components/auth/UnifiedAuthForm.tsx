@@ -33,10 +33,10 @@ export function UnifiedAuthForm() {
     try {
       setFormState((state) => ({ ...state, isLoading: true }));
       
-      // Get the redirect URL from sessionStorage or use a default
+      // Get the redirect URL from searchParams or sessionStorage
       const returnTo = searchParams.get("returnTo") || 
                       (typeof window !== 'undefined' ? sessionStorage.getItem("redirectAfterAuth") : null) || 
-                      "/rewards";
+                      "/";  // Default to homepage instead of rewards
       
       // Store the returnTo in sessionStorage as a fallback
       if (returnTo && typeof window !== 'undefined') {
@@ -103,7 +103,7 @@ export function UnifiedAuthForm() {
 
         const returnTo = searchParams.get("returnTo") || 
                         (typeof window !== 'undefined' ? sessionStorage.getItem("redirectAfterAuth") : null) || 
-                        "/rewards";
+                        "/";  // Default to homepage instead of rewards
         
         if (typeof window !== 'undefined') {
           sessionStorage.removeItem("redirectAfterAuth");

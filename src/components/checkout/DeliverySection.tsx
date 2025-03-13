@@ -72,95 +72,65 @@ export function DeliverySection({
     date: Date,
     timeSlot: { startTime: string; endTime: string }
   ) => {
+    console.log('[DeliverySection] Delivery slot selected:', {
+      date: date.toISOString(),
+      timeSlot,
+      currentAddress: address,
+      currentZipCode: zipCode
+    });
+
     setDeliveryDate(date);
     setDeliveryTime(`${timeSlot.startTime}-${timeSlot.endTime}`);
 
-    if (zipCode) {
-      try {
-        const feeInfo = await DeliveryClient.getDeliveryFeeByZipCode(
-          zipCode,
-          subtotal
-        );
-        setDeliveryFee(feeInfo.fee);
-        onDeliveryInfoChange({
-          address,
-          city,
-          zipCode,
-          deliveryDate: date,
-          deliveryTime: `${timeSlot.startTime}-${timeSlot.endTime}`,
-          instructions,
-          deliveryFee: feeInfo.fee,
-          freeDeliveryThreshold: feeInfo.freeDeliveryThreshold,
-          isDeliveryFree: feeInfo.isDeliveryFree,
-        });
-      } catch (error) {
-        console.error("Error calculating delivery fee:", error);
-      }
-    }
+    // Update delivery info without recalculating fee if we already have it
+    console.log('[DeliverySection] Updating delivery info with current fee:', {
+      deliveryFee,
+      hasExistingFee: deliveryFee !== undefined
+    });
+
+    onDeliveryInfoChange({
+      address,
+      city,
+      zipCode,
+      deliveryDate: date,
+      deliveryTime: `${timeSlot.startTime}-${timeSlot.endTime}`,
+      instructions,
+      deliveryFee: deliveryFee,
+      freeDeliveryThreshold: undefined,
+      isDeliveryFree: false,
+    });
   };
 
   const handleAddressSelect = async (addressData: any) => {
+    console.log('[DeliverySection] Address selected:', {
+      street: addressData.street,
+      city: addressData.city,
+      zipCode: addressData.zipCode
+    });
+
     setAddress(addressData.street);
     setCity(addressData.city);
     setZipCode(addressData.zipCode);
 
-    try {
-      // Only fetch delivery fee when it's a delivery address (not shipping)
-      if (isDeliveryAddress) {
-        const feeInfo = await DeliveryClient.getDeliveryFeeByZipCode(
-          addressData.zipCode,
-          subtotal
-        );
-        setDeliveryFee(feeInfo.fee);
-
-        onDeliveryInfoChange({
-          address: addressData.street,
-          city: addressData.city,
-          zipCode: addressData.zipCode,
-          deliveryDate,
-          deliveryTime,
-          instructions,
-          deliveryFee: feeInfo.fee,
-          freeDeliveryThreshold: feeInfo.freeDeliveryThreshold,
-          isDeliveryFree: feeInfo.isDeliveryFree,
-        });
-
-        // Display free delivery message if applicable
-        if (!feeInfo.isDeliveryFree && feeInfo.freeDeliveryThreshold > 0) {
-          toast({
-            title: "Free Delivery Available",
-            description: `Add ${formatCurrency(
-              feeInfo.freeDeliveryThreshold - subtotal
-            )} more to qualify for free delivery!`,
-          });
-        }
-      } else {
-        // For shipping addresses, don't include delivery fee
-        onDeliveryInfoChange({
-          address: addressData.street,
-          city: addressData.city,
-          zipCode: addressData.zipCode,
-          deliveryDate,
-          deliveryTime,
-          instructions,
-          deliveryFee: 0,
-          freeDeliveryThreshold: 0,
-          isDeliveryFree: false,
-        });
-      }
-    } catch (error) {
-      console.error("Error calculating delivery fee:", error);
-      toast({
-        title: "Error",
-        description: "Failed to calculate delivery fee. Please try again.",
-        variant: "destructive",
-      });
-    }
+    // Let the parent component handle the delivery fee calculation
+    console.log('[DeliverySection] Triggering parent fee calculation');
+    onDeliveryInfoChange({
+      address: addressData.street,
+      city: addressData.city,
+      zipCode: addressData.zipCode,
+      deliveryDate,
+      deliveryTime,
+      instructions,
+      deliveryFee: undefined, // This will trigger fee calculation in the parent
+      freeDeliveryThreshold: undefined,
+      isDeliveryFree: false,
+    });
   };
 
   const handleInstructionsChange = (
     e: React.ChangeEvent<HTMLTextAreaElement>
   ) => {
+    console.log('[DeliverySection] Delivery instructions updated');
     setInstructions(e.target.value);
     onDeliveryInfoChange({
       address,

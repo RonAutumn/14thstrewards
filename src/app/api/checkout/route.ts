@@ -1,152 +1,131 @@
 import { NextResponse } from 'next/server';
 import axios from 'axios';
-import { base, TABLES } from '@/lib/airtable';
 import { format } from 'date-fns';
+import { supabaseOrders } from '@/lib/supabase-orders';
 
 interface OrderAddress {
     street: string;
     city: string;
     state: string;
     zipCode: string;
-    borough?: string;
-}
-
-interface ShippingRate {
-    name: string;
-    price: number;
 }
 
 interface CheckoutData {
     orderId: string;
-    customerName?: string;
+    customerName: string;
     customerEmail: string;
-    customerPhone?: string;
-    userId: string;
+    customerPhone: string;
+    userId?: string;
     items: any[];
     total: number;
-    deliveryMethod: 'delivery' | 'shipping' | 'pickup';
-    address: OrderAddress | null;
+    deliveryMethod: 'pickup' | 'delivery' | 'shipping';
+    address?: OrderAddress | null;
     deliveryDateTime?: string;
     pickupDateTime?: string;
-    deliveryFee?: number;
-    selectedRate?: ShippingRate;
+    selectedRate?: any;
     instructions?: string;
-    paymentMethod: 'cash' | 'card';
+    paymentMethod: 'card';
 }
 
 export async function POST(request: Request) {
     try {
-        const checkoutData = await request.json() as CheckoutData;
-        console.log('Received checkout data:', checkoutData);
-
-        // Validate required fields
-        if (!checkoutData.orderId || !checkoutData.customerEmail || !checkoutData.items || !checkoutData.userId) {
-            console.error('Missing required fields:', checkoutData);
+        console.log('[Checkout API] Received checkout request');
+        
+        if (!process.env.SISTER_SITE_URL) {
+            console.error('[Checkout API] SISTER_SITE_URL is not configured');
             return NextResponse.json(
-                { error: 'Missing required fields (orderId, customerEmail, items, or userId)' },
-                { status: 400 }
+                { error: 'Server configuration error' },
+                { status: 500 }
             );
         }
 
-        // For cash payments, create order directly in Airtable
-        if (checkoutData.paymentMethod === 'cash') {
-            let tableName: string;
-            let formattedOrder: any;
-
-            switch (checkoutData.deliveryMethod) {
-                case 'delivery':
-                    tableName = TABLES.DELIVERY_ORDERS;
-                    formattedOrder = {
-                        "Order ID": checkoutData.orderId,
-                        "Customer Name": checkoutData.customerName || '',
-                        "Email": checkoutData.customerEmail,
-                        "Phone": checkoutData.customerPhone || '',
-                        "Address": checkoutData.address?.street || '',
-                        "Borough": checkoutData.address?.borough || '',
-                        "ZIP Code": checkoutData.address?.zipCode || '',
-                        "Delivery Date": checkoutData.deliveryDateTime ? format(new Date(checkoutData.deliveryDateTime), 'M/d/yyyy') : '',
-                        "Items": JSON.stringify(checkoutData.items),
-                        "Delivery Fee": checkoutData.deliveryFee || 0,
-                        "Total": checkoutData.total,
-                        "Status": "pending",
-                        "Payment Method": "cash",
-                        "Instructions": checkoutData.instructions || '',
-                        "Timestamp": format(new Date(), 'yyyy-MM-dd\'T\'HH:mm:ss.SSS\'Z\'')
-                    };
-                    break;
-
-                case 'pickup':
-                    tableName = TABLES.PICKUP_ORDERS;
-                    formattedOrder = {
-                        "Order ID": checkoutData.orderId,
-                        "Customer Name": checkoutData.customerName || '',
-                        "Email": checkoutData.customerEmail,
-                        "Phone": checkoutData.customerPhone || '',
-                        "Items": JSON.stringify(checkoutData.items),
-                        "Total": checkoutData.total,
-                        "Status": "pending",
-                        "Payment Method": "cash",
-                        "Pickup Date": checkoutData.pickupDateTime ? format(new Date(checkoutData.pickupDateTime), 'M/d/yyyy') : '',
-                        "Timestamp": format(new Date(), 'yyyy-MM-dd\'T\'HH:mm:ss.SSS\'Z\'')
-                    };
-                    break;
-
-                case 'shipping':
-                    tableName = TABLES.SHIPPING_ORDERS;
-                    formattedOrder = {
-                        "Order ID": checkoutData.orderId,
-                        "Customer Name": checkoutData.customerName || '',
-                        "Email": checkoutData.customerEmail,
-                        "Phone": checkoutData.customerPhone || '',
-                        "Address": checkoutData.address?.street || '',
-                        "City": checkoutData.address?.city || '',
-                        "State": checkoutData.address?.state || '',
-                        "Zip Code": checkoutData.address?.zipCode || '',
-                        "Items": JSON.stringify(checkoutData.items),
-                        "Total": checkoutData.total,
-                        "Status": "pending",
-                        "Payment Method": "cash",
-                        "Timestamp": format(new Date(), 'yyyy-MM-dd\'T\'HH:mm:ss.SSS\'Z\'')
-                    };
-                    break;
-
-                default:
-                    return NextResponse.json(
-                        { error: 'Invalid delivery method' },
-                        { status: 400 }
-                    );
-            }
-
-            try {
-                // Create record in Airtable
-                await base(tableName).create([{ fields: formattedOrder }]);
-
-                return NextResponse.json({
-                    redirectUrl: `/order-confirmation?orderId=${checkoutData.orderId}&orderData=${encodeURIComponent(JSON.stringify(checkoutData))}`
-                });
-            } catch (error) {
-                console.error('Error creating Airtable record:', error);
-                return NextResponse.json(
-                    { error: 'Failed to create order in Airtable' },
-                    { status: 500 }
-                );
-            }
+        const data: CheckoutData = await request.json();
+        
+        // Validate required fields
+        if (!data.customerName || !data.customerEmail || !data.items?.length || !data.total) {
+            console.error('[Checkout API] Missing required fields:', {
+                hasName: Boolean(data.customerName),
+                hasEmail: Boolean(data.customerEmail),
+                hasItems: Boolean(data.items?.length),
+                hasTotal: Boolean(data.total)
+            });
+            return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
         }
 
-        // For card payments, create Square checkout session
-        const squareResponse = await axios.post(
-            `${process.env.SISTER_SITE_DOMAIN}/api/create-checkout`,
-            {
-                ...checkoutData,
-                redirectUrl: `${process.env.NEXT_PUBLIC_DOMAIN}/success?orderId=${checkoutData.orderId}&orderData=${encodeURIComponent(JSON.stringify(checkoutData))}`
-            }
-        );
+        console.log('[Checkout API] Creating Stripe checkout session with data:', {
+            customerEmail: data.customerEmail,
+            itemCount: data.items.length,
+            total: data.total,
+            deliveryMethod: data.deliveryMethod
+        });
 
-        return NextResponse.json(squareResponse.data);
+        // Create Stripe checkout session through sister site
+        console.log('[Checkout API] Attempting to connect to:', process.env.SISTER_SITE_URL);
+        
+        const payload = {
+            orderId: data.orderId,
+            customerEmail: data.customerEmail,
+            amount: Math.round(data.total * 100), // Convert dollars to cents
+            items: data.items,
+            metadata: {
+                orderId: data.orderId,
+                customerName: data.customerName,
+                deliveryMethod: data.deliveryMethod,
+                ...(data.address && { address: JSON.stringify(data.address) }),
+                ...(data.deliveryDateTime && { deliveryDateTime: data.deliveryDateTime }),
+                ...(data.pickupDateTime && { pickupDateTime: data.pickupDateTime })
+            }
+        };
+
+        const stripeResponse = await axios({
+            method: 'post',
+            url: `${process.env.SISTER_SITE_URL}/api/checkout`,
+            data: payload,
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+                'X-Sister-Site-Secret': process.env.SISTER_SITE_SECRET || '',
+                'X-Source-App': 'rewards'
+            },
+            validateStatus: function (status) {
+                return status >= 200 && status < 500; // Accept any status code less than 500
+            }
+        });
+
+        console.log('[Checkout API] Received response from sister site:', {
+            status: stripeResponse.status,
+            data: stripeResponse.data,
+            hasUrl: Boolean(stripeResponse.data?.url)
+        });
+
+        if (!stripeResponse.data?.url) {
+            console.error('[Checkout API] Invalid response from sister site:', {
+                responseData: stripeResponse.data,
+                status: stripeResponse.status
+            });
+            return NextResponse.json(
+                { error: 'Failed to create Stripe checkout session: No URL received' },
+                { status: 500 }
+            );
+        }
+
+        console.log('[Checkout API] Successfully created Stripe checkout session:', {
+            hasUrl: Boolean(stripeResponse.data.url),
+            orderId: data.orderId
+        });
+
+        return NextResponse.json({
+            redirectUrl: stripeResponse.data.url,
+            orderId: data.orderId
+        });
     } catch (error) {
-        console.error('Error processing checkout:', error);
+        console.error('[Checkout API] Error processing checkout:', {
+            error: error instanceof Error ? error.message : 'Unknown error',
+            stack: error instanceof Error ? error.stack : undefined
+        });
+        
         return NextResponse.json(
-            { error: error instanceof Error ? error.message : 'Failed to process checkout' },
+            { error: 'Failed to process checkout' },
             { status: 500 }
         );
     }
