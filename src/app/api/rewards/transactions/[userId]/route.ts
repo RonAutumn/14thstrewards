@@ -18,20 +18,7 @@ export async function GET(
       .order('created_at', { ascending: false })
 
     if (pointsError) {
-      console.error('Failed to fetch points history:', pointsError)
       throw pointsError
-    }
-
-    // Get transactions
-    const { data: transactions, error: transactionsError } = await supabase
-      .from('transactions')
-      .select('*')
-      .eq('user_id', params.userId)
-      .order('created_at', { ascending: false })
-
-    if (transactionsError) {
-      console.error('Failed to fetch transactions:', transactionsError)
-      throw transactionsError
     }
 
     // Get user profile
@@ -42,18 +29,17 @@ export async function GET(
       .single()
 
     if (profileError) {
-      console.error('Failed to fetch profile:', profileError)
       throw profileError
     }
 
-    return NextResponse.json({
+    const response = {
       success: true,
       pointsHistory: pointsHistory || [],
-      transactions: transactions || [],
-      profile
-    })
+      profile: profile || { points: 0, membership_level: 'Bronze' }
+    };
+
+    return NextResponse.json(response);
   } catch (error) {
-    console.error('Failed to fetch rewards data:', error)
     return NextResponse.json({
       error: 'Failed to fetch rewards data',
       details: error instanceof Error ? error.message : 'Unknown error'
@@ -68,6 +54,23 @@ export async function POST(
   const supabase = createRouteHandlerClient<Database>({ cookies: () => cookies() })
 
   try {
+    // Get the current session
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+    if (sessionError || !session) {
+      return NextResponse.json({
+        error: 'Unauthorized',
+        details: 'No active session'
+      }, { status: 401 })
+    }
+
+    // Verify the authenticated user matches the requested user_id
+    if (session.user.id !== params.userId) {
+      return NextResponse.json({
+        error: 'Unauthorized',
+        details: 'You can only modify your own points'
+      }, { status: 403 })
+    }
+
     // Validate request body
     const body = await request.json()
     const { type, points, description } = body

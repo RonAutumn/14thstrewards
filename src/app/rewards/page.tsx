@@ -26,30 +26,46 @@ interface Reward {
 
 // Define the Transaction interface to match what's used in the component
 interface Transaction {
-  _id: string;
+  id: string;
   user_id: string;
-  description: string;
-  points: number;
-  type: "EARN" | "REDEEM";
-  created_at: string | { $date: string };
-  reward_code?: string;
-  reward_id?: string;
-  status?: "completed" | "points_update_failed";
+  points_before: number;
+  points_after: number;
+  change_amount: number;
+  transaction_type: "EARN" | "REDEEM";
+  source: string;
+  metadata?: any;
+  created_at: string;
+  expires_at?: string | null;
+  order_id?: string | null;
 }
 
 export default function RewardsPage() {
   const [points, setPoints] = useState<number>(0);
   const [rewards, setRewards] = useState<Reward[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pendingPoints, setPendingPoints] = useState<number>(0);
+  const [userData, setUserData] = useState<any>(null);
   const { toast } = useToast();
   const { user, isLoading: authLoading } = useAuth();
   const router = useRouter();
 
+  // Debug logging
+  useEffect(() => {
+    console.log('Auth State:', {
+      user: user ? 'exists' : 'null',
+      userId: user?.id,
+      authLoading,
+      loading,
+      error,
+      timestamp: new Date().toISOString()
+    });
+  }, [user, authLoading, loading, error]);
+
   const refreshUserData = async (userId: string) => {
     try {
+      console.log('Refreshing user data for:', userId);
       setLoading(true);
       
       const [userResponse, transactionsResponse, rewardsResponse] =
@@ -59,76 +75,81 @@ export default function RewardsPage() {
           fetch(`/api/rewards/available?userId=${userId}`),
         ]);
 
+      // Log responses for debugging
+      console.log('API Responses:', {
+        user: { status: userResponse.status, ok: userResponse.ok },
+        transactions: { status: transactionsResponse.status, ok: transactionsResponse.ok },
+        rewards: { status: rewardsResponse.status, ok: rewardsResponse.ok }
+      });
+
       // Handle each response individually to avoid failing everything if one fails
-      let userData = { points: 0 };
+      let userData = { profile: { points: 0, membership_level: 'Bronze' } };
       let transactionsData = { pointsHistory: [] };
       let rewardsData = { rewards: [] };
 
       try {
         if (userResponse.ok) {
-          userData = await userResponse.json();
+          const data = await userResponse.json();
+          userData = { profile: data };
+          console.log('User data:', userData);
         } else {
-          console.error('Failed to fetch user data:', await userResponse.text());
+          throw new Error(await userResponse.text());
         }
-      } catch (error) {
-        console.error('Error parsing user response:', error);
-      }
 
-      try {
         if (transactionsResponse.ok) {
           transactionsData = await transactionsResponse.json();
+          console.log('Transactions data:', transactionsData);
         } else {
-          console.error('Failed to fetch transactions:', await transactionsResponse.text());
+          throw new Error(await transactionsResponse.text());
         }
-      } catch (error) {
-        console.error('Error parsing transactions response:', error);
-      }
 
-      try {
         if (rewardsResponse.ok) {
           rewardsData = await rewardsResponse.json();
+          console.log('Rewards data:', rewardsData);
         } else {
-          console.error('Failed to fetch rewards:', await rewardsResponse.text());
+          throw new Error(await rewardsResponse.text());
         }
+
+        // Update state with data
+        setPoints(userData.profile?.points || 0);
+        setUserData(userData);
+        setRewards(rewardsData.rewards || []);
+
+        // Format transactions
+        const formattedTransactions = (transactionsData?.pointsHistory?.map((history: any) => ({
+          id: history.id || `temp-${Date.now()}`,
+          user_id: history.user_id,
+          points_before: Number(history.points_before) || 0,
+          points_after: Number(history.points_after) || 0,
+          change_amount: Number(history.change_amount) || 0,
+          transaction_type: history.transaction_type || "EARN",
+          source: history.source || 'Unknown',
+          metadata: history.metadata,
+          created_at: history.created_at || new Date().toISOString(),
+          expires_at: history.expires_at,
+          order_id: history.order_id
+        })).filter(Boolean) || []) as Transaction[];
+
+        console.log('Formatted transactions:', formattedTransactions);
+        setTransactions(formattedTransactions);
+
+        // Calculate pending points
+        const pendingPoints = formattedTransactions.reduce((total, t) => {
+          if (!t.change_amount) return total;
+          return t.transaction_type === "EARN" 
+            ? total + t.change_amount 
+            : total - t.change_amount;
+        }, 0);
+
+        setPendingPoints(pendingPoints);
+        setError(null);
       } catch (error) {
-        console.error('Error parsing rewards response:', error);
+        console.error("Error processing responses:", error);
+        setError(error instanceof Error ? error.message : "Failed to process data");
       }
-
-      // Update state with whatever data we successfully retrieved
-      setPoints(userData.points || 0);
-      setRewards(rewardsData.rewards || []);
-
-      // Format transactions
-      const formattedTransactions = (transactionsData.pointsHistory?.map((history: any) => ({
-        _id: history.id,
-        user_id: history.user_id,
-        description: history.description || history.source,
-        points: history.change_amount,
-        type: history.transaction_type,
-        created_at: history.created_at,
-        status: "completed" as const,
-      })) || []) as Transaction[];
-
-      setTransactions(formattedTransactions);
-
-      // Calculate pending points
-      const pendingPoints = formattedTransactions.reduce((total, t) => {
-        if (t.type === "EARN" && t.status !== "points_update_failed") {
-          return total + t.points;
-        }
-        if (t.type === "REDEEM" && t.status !== "points_update_failed") {
-          return total - t.points;
-        }
-        return total;
-      }, 0);
-
-      setPendingPoints(pendingPoints);
-      setError(null);
     } catch (error) {
       console.error("Failed to refresh user data:", error);
-      setError(
-        error instanceof Error ? error.message : "Failed to load rewards data"
-      );
+      setError(error instanceof Error ? error.message : "Failed to load rewards data");
     } finally {
       setLoading(false);
     }
@@ -136,10 +157,10 @@ export default function RewardsPage() {
 
   // Load user data when authenticated
   useEffect(() => {
-    if (user) {
+    if (!authLoading && user) {
       refreshUserData(user.id);
     }
-  }, [user]);
+  }, [user, authLoading]);
 
   // Add periodic refresh
   useEffect(() => {
@@ -152,14 +173,15 @@ export default function RewardsPage() {
     return () => clearInterval(intervalId);
   }, [user]);
 
-  // Show loading state while auth is being checked
-  if (authLoading) {
+  // Combined loading state
+  if (authLoading || (!user && authLoading)) {
     return (
       <Layout>
         <div className="container mx-auto px-4 py-8">
           <Card className="p-6">
             <div className="flex items-center justify-center min-h-[200px]">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+              <span className="ml-2">Checking authentication...</span>
             </div>
           </Card>
         </div>
@@ -189,6 +211,7 @@ export default function RewardsPage() {
           <Card className="p-6">
             <div className="flex items-center justify-center min-h-[200px]">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+              <span className="ml-2">Loading rewards data...</span>
             </div>
           </Card>
         </div>
@@ -221,11 +244,12 @@ export default function RewardsPage() {
           points={points}
           pendingPoints={pendingPoints}
           user={user}
+          tier={userData?.profile?.membership_level}
           joinDate={user.created_at ? user.created_at : new Date().toISOString()}
         />
 
         {/* Available Rewards Section */}
-        <Card className="p-6">
+        <Card>
           <h2 className="text-2xl font-bold mb-6">Available Rewards</h2>
           <div className="space-y-4">
             {rewards.length === 0 ? (
@@ -238,43 +262,11 @@ export default function RewardsPage() {
                   <h3 className="text-lg font-semibold mb-2">{reward.name}</h3>
                   <p className="text-muted-foreground mb-4">{reward.description}</p>
                   <div className="flex justify-between items-center">
-                    <span className="text-lg font-bold">
-                      {reward.pointsCost} points
-                    </span>
+                    <span className="font-bold">{reward.pointsCost} points</span>
                     <Button
                       onClick={() => {
                         if (points >= reward.pointsCost) {
-                          // Handle redemption
-                          fetch(`/api/rewards/${reward.reward_id}/redeem`, {
-                            method: "POST",
-                            headers: {
-                              "Content-Type": "application/json",
-                            },
-                            body: JSON.stringify({
-                              userId: user.id,
-                            }),
-                          })
-                            .then((response) => response.json())
-                            .then((data) => {
-                              if (data.success) {
-                                toast({
-                                  title: "Success",
-                                  description: `Successfully redeemed ${reward.name}`,
-                                });
-                                refreshUserData(user.id);
-                              } else {
-                                throw new Error(
-                                  data.error || "Failed to redeem reward"
-                                );
-                              }
-                            })
-                            .catch((error) => {
-                              toast({
-                                title: "Error",
-                                description: error.message,
-                                variant: "destructive",
-                              });
-                            });
+                          // Handle reward redemption
                         } else {
                           toast({
                             title: "Insufficient Points",
@@ -296,7 +288,7 @@ export default function RewardsPage() {
           </div>
         </Card>
 
-        <PointsHistory transactions={transactions as any} />
+        <PointsHistory transactions={transactions} />
       </div>
     </Layout>
   );

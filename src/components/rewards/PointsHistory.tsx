@@ -7,13 +7,15 @@ import { cn } from "@/lib/utils";
 interface Transaction {
   id: string;
   user_id: string;
-  description: string;
-  points: number;
-  type: "EARN" | "REDEEM";
+  points_before: number;
+  points_after: number;
+  change_amount: number;
+  transaction_type: "EARN" | "REDEEM";
+  source: string;
+  metadata?: any;
   created_at: string;
-  reward_code?: string;
-  reward_id?: string;
-  status?: "completed" | "points_update_failed";
+  expires_at?: string | null;
+  order_id?: string | null;
 }
 
 interface PointsHistoryProps {
@@ -37,22 +39,22 @@ export default function PointsHistory({ transactions }: PointsHistoryProps) {
     return new Date(created_at);
   };
 
-  const formatPoints = (points: number | undefined): string => {
-    if (typeof points !== "number") return "0 points";
+  const formatPoints = (points: number): string => {
     const absPoints = Math.abs(Math.round(points));
     return `${absPoints} points`;
   };
 
-  const sortedTransactions = [...transactions].sort(
+  const sortedTransactions = [...(transactions || [])].sort(
     (a, b) =>
       getDateFromTransaction(b.created_at).getTime() -
       getDateFromTransaction(a.created_at).getTime()
   );
+
   const displayTransactions = showAll
     ? sortedTransactions
     : sortedTransactions.slice(0, 5);
 
-  if (transactions.length === 0) {
+  if (!transactions || transactions.length === 0) {
     return (
       <Card className="mt-6">
         <CardHeader>
@@ -83,7 +85,7 @@ export default function PointsHistory({ transactions }: PointsHistoryProps) {
               className="flex justify-between items-center py-2 border-b border-border last:border-0"
             >
               <div>
-                <p className="font-medium text-sm">{transaction.description}</p>
+                <p className="font-medium text-sm">{transaction.source}</p>
                 <p className="text-xs text-muted-foreground">
                   {formatDistance(
                     getDateFromTransaction(transaction.created_at),
@@ -95,13 +97,13 @@ export default function PointsHistory({ transactions }: PointsHistoryProps) {
               <span
                 className={cn(
                   "font-semibold text-sm",
-                  transaction.type === "EARN"
+                  transaction.transaction_type === "EARN"
                     ? "text-green-500"
                     : "text-red-500"
                 )}
               >
-                {transaction.type === "EARN" ? "+" : "-"}
-                {formatPoints(transaction.points)}
+                {transaction.transaction_type === "EARN" ? "+" : "-"}
+                {formatPoints(transaction.change_amount)}
               </span>
             </div>
           ))}

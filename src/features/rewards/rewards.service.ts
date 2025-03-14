@@ -302,7 +302,9 @@ export const rewardsService = {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
+                    'Accept': 'application/json',
                 },
+                credentials: 'include', // This ensures cookies are sent with the request
                 body: JSON.stringify({
                     type: 'EARN',
                     points,
@@ -324,6 +326,23 @@ export const rewardsService = {
         }
     },
 
+    // New method for calculating estimated points without API calls
+    calculateEstimatedPoints(orderAmount: number, userTier: string = 'BRONZE'): number {
+        if (typeof orderAmount !== 'number' || orderAmount < 0) {
+            return 0;
+        }
+
+        // Get user's tier and corresponding multiplier
+        const tier = userTier.toUpperCase() as keyof typeof TIER_MULTIPLIERS;
+        const tierMultiplier = TIER_MULTIPLIERS[tier] || TIER_MULTIPLIERS.BRONZE;
+
+        // Base points calculation (10 points per dollar spent)
+        const basePoints = Math.floor(orderAmount * 10);
+
+        // Apply tier multiplier
+        return Math.floor(basePoints * tierMultiplier);
+    },
+
     async addPointsForPurchase(userId: string | null | undefined, orderAmount: number): Promise<number> {
         // If no user ID is provided or user is not signed in, return 0 points
         if (!userId) {
@@ -343,22 +362,15 @@ export const rewardsService = {
                 return 0;
             }
 
-            // Get user's tier and corresponding multiplier
-            const userTier = (userProfile.membership_level || 'BRONZE').toUpperCase() as keyof typeof TIER_MULTIPLIERS;
-            const tierMultiplier = TIER_MULTIPLIERS[userTier] || TIER_MULTIPLIERS.BRONZE;
-
-            // Base points calculation (10 points per dollar spent)
-            const basePoints = Math.floor(orderAmount * 10);
-
-            // Apply tier multiplier
-            const totalPoints = Math.floor(basePoints * tierMultiplier);
+            // Calculate points using the new method
+            const totalPoints = this.calculateEstimatedPoints(orderAmount, userProfile.membership_level);
 
             if (totalPoints <= 0) {
                 console.log('No points to award for amount:', orderAmount);
                 return 0;
             }
 
-            const description = `Points earned from purchase of $${orderAmount.toFixed(2)} (${basePoints} base points × ${tierMultiplier}x ${userTier} multiplier)`;
+            const description = `Points earned from purchase of $${orderAmount.toFixed(2)} (${Math.floor(orderAmount * 10)} base points × ${TIER_MULTIPLIERS[userProfile.membership_level.toUpperCase() as keyof typeof TIER_MULTIPLIERS]}x ${userProfile.membership_level} multiplier)`;
 
             try {
                 const success = await this.addPoints(

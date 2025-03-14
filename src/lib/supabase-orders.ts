@@ -1,10 +1,6 @@
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import type { Database } from '@/types/supabase';
 import type { OrderItem } from '@/types/orders';
-import { createClient } from './supabase/client';
-
-// Initialize the Supabase client
-const supabaseClient = createClient();
+import { supabaseClient } from './supabase-client';
 
 // Types for our orders
 export type OrderType = 'pickup' | 'delivery' | 'shipping';
@@ -208,17 +204,61 @@ export const supabaseOrders = {
   // Update order status
   async updateOrderStatus(orderId: string, status: OrderStatus) {
     try {
-      const { data: order, error } = await supabaseClient
-        .from('orders')
-        .update({ status, updated_at: new Date().toISOString() })
-        .eq('order_id', orderId)
-        .select()
-        .single();
+      console.log('[Supabase Orders] Updating order status:', { orderId, status });
 
-      if (error) throw error;
-      return order;
+      // Map external status to valid enum value
+      const mappedStatus = 
+        status === 'paid' || status === 'success' ? 'completed' :
+        status === 'failed' ? 'cancelled' :
+        status === 'processing' ? 'processing' :
+        status === 'pending' ? 'pending' :
+        status; // Use as is if it's already a valid enum value
+
+      // First check if order exists
+      const { data: existingOrder, error: checkError } = await supabaseClient
+        .from('orders')
+        .select('order_id')
+        .eq('order_id', orderId)
+        .maybeSingle();
+
+      if (checkError) {
+        console.error('[Supabase Orders] Error checking order existence:', checkError);
+        throw checkError;
+      }
+
+      if (!existingOrder) {
+        console.error('[Supabase Orders] Order not found:', orderId);
+        throw new Error(`Order ${orderId} not found`);
+      }
+
+      // Update the order
+      const { error: updateError } = await supabaseClient
+        .from('orders')
+        .update({ 
+          status: mappedStatus, 
+          updated_at: new Date().toISOString() 
+        })
+        .eq('order_id', orderId);
+
+      if (updateError) {
+        console.error('[Supabase Orders] Error updating order status:', {
+          error: updateError,
+          orderId,
+          originalStatus: status,
+          mappedStatus
+        });
+        throw updateError;
+      }
+
+      console.log('[Supabase Orders] Order status updated successfully:', {
+        orderId,
+        originalStatus: status,
+        mappedStatus
+      });
+
+      return { orderId, status: mappedStatus };
     } catch (error) {
-      console.error('Error updating order status:', error);
+      console.error('[Supabase Orders] Error in updateOrderStatus:', error);
       throw error;
     }
   },
@@ -226,17 +266,61 @@ export const supabaseOrders = {
   // Update payment status
   async updatePaymentStatus(orderId: string, paymentStatus: PaymentStatus) {
     try {
-      const { data: order, error } = await supabaseClient
-        .from('orders')
-        .update({ payment_status: paymentStatus, updated_at: new Date().toISOString() })
-        .eq('order_id', orderId)
-        .select()
-        .single();
+      console.log('[Supabase Orders] Updating payment status:', { orderId, paymentStatus });
 
-      if (error) throw error;
-      return order;
+      // Map external status to valid enum value
+      const mappedStatus = 
+        paymentStatus === 'success' ? 'paid' :
+        paymentStatus === 'failed' ? 'failed' :
+        paymentStatus === 'refunded' ? 'refunded' :
+        paymentStatus === 'pending' ? 'pending' :
+        paymentStatus; // Use as is if it's already a valid enum value
+
+      // First check if order exists
+      const { data: existingOrder, error: checkError } = await supabaseClient
+        .from('orders')
+        .select('order_id')
+        .eq('order_id', orderId)
+        .maybeSingle();
+
+      if (checkError) {
+        console.error('[Supabase Orders] Error checking order existence:', checkError);
+        throw checkError;
+      }
+
+      if (!existingOrder) {
+        console.error('[Supabase Orders] Order not found:', orderId);
+        throw new Error(`Order ${orderId} not found`);
+      }
+
+      // Update the order
+      const { error: updateError } = await supabaseClient
+        .from('orders')
+        .update({ 
+          payment_status: mappedStatus, 
+          updated_at: new Date().toISOString() 
+        })
+        .eq('order_id', orderId);
+
+      if (updateError) {
+        console.error('[Supabase Orders] Error updating payment status:', {
+          error: updateError,
+          orderId,
+          originalStatus: paymentStatus,
+          mappedStatus
+        });
+        throw updateError;
+      }
+
+      console.log('[Supabase Orders] Payment status updated successfully:', {
+        orderId,
+        originalStatus: paymentStatus,
+        mappedStatus
+      });
+
+      return { orderId, paymentStatus: mappedStatus };
     } catch (error) {
-      console.error('Error updating payment status:', error);
+      console.error('[Supabase Orders] Error in updatePaymentStatus:', error);
       throw error;
     }
   },

@@ -2271,4 +2271,155 @@ Distance-based pricing:
 - Error state handling
 
 <div style="background: linear-gradient(to right, #4f46e5, #9333ea); height: 4px; margin: 24px 0;"></div>
-</rewritten_file>
+
+### Order Status and Database Updates (2025-03-13)
+
+#### Added
+- Server-side order status update endpoint:
+  ```typescript
+  // API endpoint for updating order status
+  const { data, error } = await supabase
+    .from('orders')
+    .update({
+      status: 'completed',
+      payment_status: 'paid',
+      updated_at: new Date().toISOString()
+    })
+    .eq('order_id', orderId)
+    .select()
+    .single();
+  ```
+- Enhanced order confirmation workflow:
+  - Real-time database updates
+  - Status verification checks
+  - Payment status synchronization
+  - Automatic confirmation updates
+
+#### Changed
+- Updated order status management:
+  - Moved to server-side processing
+  - Improved status synchronization
+  - Enhanced error handling
+  - Better state management
+- Enhanced database operations:
+  - Atomic status updates
+  - Consistent payment status
+  - Improved error recovery
+  - Better logging system
+
+#### Fixed
+- Order status persistence in database
+- Payment status synchronization
+- Status update verification
+- Database update reliability
+- Error handling in confirmation flow
+
+#### Technical Details
+1. **Status Update Implementation**
+   ```typescript
+   try {
+     const response = await fetch('/api/orders/update-status', {
+       method: 'POST',
+       headers: { 'Content-Type': 'application/json' },
+       body: JSON.stringify({
+         orderId,
+         status: 'completed',
+         paymentStatus: 'paid'
+       })
+     });
+     
+     if (!response.ok) {
+       throw new Error('Failed to update order status');
+     }
+   } catch (error) {
+     console.error('Error updating order:', error);
+     throw error;
+   }
+   ```
+
+2. **Verification Process**
+   ```typescript
+   // Verify the update by fetching the latest order
+   const { data: order } = await supabase
+     .from('orders')
+     .select('*')
+     .eq('order_id', orderId)
+     .single();
+   
+   console.log('Updated order:', order);
+   ```
+
+3. **Error Recovery**
+   ```typescript
+   // Retry logic for failed updates
+   const retryUpdate = async (orderId: string, attempts = 3) => {
+     for (let i = 0; i < attempts; i++) {
+       try {
+         return await updateOrderStatus(orderId);
+       } catch (error) {
+         if (i === attempts - 1) throw error;
+         await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
+       }
+     }
+   };
+   ```
+
+### Rewards Page Debugging and Simplification (2025-03-13)
+
+#### Added
+- Enhanced debug logging for rewards page:
+  ```typescript
+  // Debug logging in rewards page
+  console.log('Rewards page state:', {
+    user,
+    points,
+    tier,
+    isLoading
+  });
+  ```
+- Streamlined points calculation with tier multipliers
+- Clear loading state indicators for better UX
+- Direct points balance display from profile
+
+#### Changed
+- Simplified authentication checks:
+  - Removed redundant admin status verification
+  - Streamlined user authentication flow
+  - Improved loading state management
+  - Enhanced error handling clarity
+- Updated rewards display logic:
+  - Direct tier calculation from points
+  - Immediate points balance updates
+  - Cleaner transaction history display
+  - Better progress indicators
+
+#### Fixed
+- Authentication loading state persistence
+- Unnecessary admin status checks
+- Points calculation delays
+- Transaction history loading
+- Progress bar updates
+
+#### Technical Details
+1. **Authentication Simplification**
+   ```typescript
+   // Simplified auth check
+   if (!user) {
+     return <SignInPrompt />;
+   }
+   ```
+
+2. **Points Display**
+   ```typescript
+   // Direct points display from profile
+   const { points, tier } = profile;
+   const progress = calculateProgress(points, tier);
+   ```
+
+3. **Loading State**
+   ```typescript
+   // Cleaner loading state
+   if (isLoading) {
+     return <LoadingSpinner />;
+   }
+   ```

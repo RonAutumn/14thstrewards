@@ -58,7 +58,7 @@ export function ProductCard({ product }: ProductCardProps) {
     addItem({
       id: product.id,
       name: product.name,
-      price: product.price || 0,
+      price: currentVariation.price || product.price || 0,
       selectedVariation: {
         name: currentVariation.name,
         price: currentVariation.price || 0,

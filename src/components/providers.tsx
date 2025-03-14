@@ -3,6 +3,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ThemeProvider } from "@/components/theme-provider";
 import { type ReactNode } from "react";
+import { AuthProvider } from "@/contexts/AuthContext";
 
 // Create a client
 const queryClient = new QueryClient({
@@ -34,7 +35,9 @@ export function Providers({ children }: ProvidersProps) {
         storageKey="heaven-high-theme"
         suppressHydrationWarning
       >
-        {children}
+        <AuthProvider>
+          {children}
+        </AuthProvider>
       </ThemeProvider>
     </QueryClientProvider>
   );

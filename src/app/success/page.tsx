@@ -33,8 +33,14 @@ export default function SuccessPage() {
 
         const verifyOrder = async () => {
             try {
+                // Minimal order data to satisfy API requirements
+                const defaultOrderData = {
+                    total: 0,
+                    currentPoints: 0
+                };
+
                 // Call the checkout-status endpoint to verify and update the order
-                const response = await fetch(`/api/checkout-status?orderId=${orderId}&status=success`, {
+                const response = await fetch(`/api/checkout-status?orderId=${orderId}&status=success&orderData=${encodeURIComponent(JSON.stringify(defaultOrderData))}`, {
                     method: 'GET',
                     headers: {
                         'Content-Type': 'application/json',

@@ -113,14 +113,14 @@ const convertCartItem = (item: GlobalCartItem): OrderItem => ({
   id: item.id,
   name: item.name,
   quantity: item.quantity,
-  price: item.price || 0,
-  total: (item.price || 0) * item.quantity,
+  price: item.selectedVariation?.price || item.price || 0,
+  total: (item.selectedVariation?.price || item.price || 0) * item.quantity,
   variation: item.selectedVariation?.name,
   recordId: item.id,
   isRedeemed: false,
   originalPrice: item.price || 0,
   pointsCost: item.pointsCost || 0,
-  unitPrice: item.price || 0,
+  unitPrice: item.selectedVariation?.price || item.price || 0,
   weight: item.weight || 1,
 });
 
@@ -341,7 +341,7 @@ export default function CheckoutPage() {
 
   // Calculate subtotal from items first
   const subtotal = items.reduce(
-    (total, item) => total + (item.price || 0) * item.quantity,
+    (total, item) => total + (item.selectedVariation?.price || item.price || 0) * item.quantity,
     0
   );
 
@@ -398,9 +398,11 @@ export default function CheckoutPage() {
     const calculateEstimatedPoints = async () => {
       if (user?.id) {
         try {
-          const points = await rewardsService.addPointsForPurchase(
-            user.id,
-            subtotal
+          // Get user profile to determine tier
+          const userProfile = await rewardsService.getUserProfile(user.id);
+          const points = rewardsService.calculateEstimatedPoints(
+            subtotal,
+            userProfile?.membership_level || 'BRONZE'
           );
           setEstimatedPoints(points);
         } catch (error) {
@@ -419,32 +421,34 @@ export default function CheckoutPage() {
       id: item.id,
       name: item.name,
       quantity: item.quantity,
-      price: item.price || 0,
-      total: (item.price || 0) * item.quantity,
+      price: item.selectedVariation?.price || item.price || 0,
+      total: (item.selectedVariation?.price || item.price || 0) * item.quantity,
       variation: item.selectedVariation?.name,
       recordId: item.id,
       isRedeemed: false,
       originalPrice: item.price || 0,
       pointsCost: item.pointsCost || 0,
-      unitPrice: item.price || 0,
+      unitPrice: item.selectedVariation?.price || item.price || 0,
       weight: item.weight || 1,
     }));
 
   // Use formData.deliveryMethod instead of separate state
   const deliveryMethod = formData.deliveryMethod;
 
-  // Calculate total including appropriate fees
-  const calculateTotal = useCallback(() => {
-    let total = subtotal;
-
-    if (deliveryMethod === "delivery" && formData.deliveryFee) {
-      total += formData.deliveryFee;
-    } else if (deliveryMethod === "shipping" && formData.shippingFee) {
-      total += formData.shippingFee;
+  // Calculate total including delivery fee
+  const calculatedTotal = useMemo(() => {
+    const subtotal = items.reduce(
+      (sum, item) => sum + (item.selectedVariation?.price || item.price || 0) * item.quantity,
+      0
+    );
+    let fee = 0;
+    if (deliveryMethod === "shipping" && selectedRate) {
+      fee = selectedRate.price;
+    } else if (formData.deliveryFee) {
+      fee = formData.deliveryFee;
     }
-
-    return total;
-  }, [subtotal, deliveryMethod, formData.deliveryFee, formData.shippingFee]);
+    return subtotal + fee;
+  }, [items, deliveryMethod, selectedRate, formData.deliveryFee]);
 
   // Update fee when delivery method or selected rate changes - with proper guards
   useEffect(() => {
@@ -480,7 +484,7 @@ export default function CheckoutPage() {
 
   // Update the total whenever relevant values change
   useEffect(() => {
-    const newTotal = calculateTotal();
+    const newTotal = calculatedTotal;
     setFormData((prev) => {
       // Only update if the total has actually changed
       if (prev.total === newTotal) {
@@ -488,7 +492,7 @@ export default function CheckoutPage() {
       }
       return { ...prev, total: newTotal };
     });
-  }, [subtotal, formData.deliveryFee, formData.shippingFee, deliveryMethod]);
+  }, [calculatedTotal]);
 
   // Keep form data items in sync with cart items
   useEffect(() => {
@@ -1317,21 +1321,6 @@ export default function CheckoutPage() {
     }
   }, [formData.pickupDate]);
 
-  // Calculate total including delivery fee
-  const total = useMemo(() => {
-    const subtotal = items.reduce(
-      (sum, item) => sum + (item.price || 0) * item.quantity,
-      0
-    );
-    let fee = 0;
-    if (deliveryMethod === "shipping" && selectedRate) {
-      fee = selectedRate.price;
-    } else if (formData.deliveryFee) {
-      fee = formData.deliveryFee;
-    }
-    return subtotal + fee;
-  }, [items, deliveryMethod, selectedRate, formData.deliveryFee]);
-
   useEffect(() => {
     const fetchStoreSettings = async () => {
       try {
@@ -1594,7 +1583,7 @@ export default function CheckoutPage() {
                   {renderDeliveryFee()}
                   <div className="flex justify-between font-bold mt-2 pt-2 border-t">
                     <span>Total</span>
-                    <span>{formatCurrency(total)}</span>
+                    <span>{formatCurrency(calculatedTotal)}</span>
                   </div>
                 </div>
               </CardContent>

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { format } from 'date-fns';
 import { supabaseOrders } from '@/lib/supabase-orders';
 import type { CreateOrderData } from '@/lib/supabase-orders';
+import { supabaseClient } from '@/lib/supabase-client';
 
 interface OrderStatusResponse {
     success: boolean;
@@ -66,15 +67,25 @@ export async function GET(request: Request) {
         const status = url.searchParams.get('status') || 'success';
         const orderDataStr = url.searchParams.get('orderData');
 
-        if (!orderId || !orderDataStr) {
+        if (!orderId) {
             return addCorsHeaders(NextResponse.json({
                 success: false,
-                message: 'Missing order ID or order data',
+                message: 'Missing order ID',
                 orderId: ''
             } as OrderStatusResponse, { status: 400 }));
         }
 
-        const orderData = JSON.parse(decodeURIComponent(orderDataStr));
+        let orderData;
+        try {
+            orderData = orderDataStr ? JSON.parse(decodeURIComponent(orderDataStr)) : { total: 0, currentPoints: 0 };
+        } catch (error) {
+            return addCorsHeaders(NextResponse.json({
+                success: false,
+                message: 'Invalid order data format',
+                orderId
+            } as OrderStatusResponse, { status: 400 }));
+        }
+
         const result = await updateOrderStatus(orderId, status, orderData);
 
         if (!result.success) {
@@ -119,20 +130,44 @@ export async function POST(request: Request) {
     }
 }
 
+// Helper function to calculate points from items only
+function calculateItemsTotal(items: any[]): number {
+    return items.reduce((sum, item) => sum + (item.total || 0), 0);
+}
+
 // Helper function to update order status
 async function updateOrderStatus(orderId: string, status: string, orderData: any): Promise<OrderStatusResponse> {
     try {
         console.log('Processing order status:', { orderId, status, orderData });
 
+        // First check if order exists
+        const { data: existingOrder, error: fetchError } = await supabaseClient
+            .from('orders')
+            .select('*')
+            .eq('order_id', orderId)
+            .single();
+
+        if (fetchError) {
+            console.error('Error fetching order:', fetchError);
+            return {
+                success: false,
+                message: 'Order not found',
+                orderId
+            };
+        }
+
+        console.log('Existing order:', existingOrder);
+
         // Update order status in Supabase if payment is confirmed
         if (status === 'paid' || status === 'completed' || status === 'success') {
             try {
                 // Update order status and payment status in Supabase
-                await supabaseOrders.updateOrderStatus(orderId, 'confirmed');
+                await supabaseOrders.updateOrderStatus(orderId, 'completed');
                 await supabaseOrders.updatePaymentStatus(orderId, 'paid');
 
-                // Calculate points (this logic should be moved to a separate service)
-                const pointsEarned = Math.floor(orderData.total);
+                // Calculate points based on items total only, not including delivery or shipping fees
+                const itemsTotal = calculateItemsTotal(existingOrder.items);
+                const pointsEarned = Math.floor(itemsTotal);
                 const totalPoints = (orderData.currentPoints || 0) + pointsEarned;
                 const pendingPoints = 0; // Card payments are confirmed immediately
 
@@ -186,7 +221,10 @@ async function updateOrderStatus(orderId: string, status: string, orderData: any
             success: true,
             message: 'Order status acknowledged',
             orderId,
-            orderData
+            orderData: {
+                ...orderData,
+                status: status
+            }
         };
     } catch (error) {
         console.error('Error updating order status:', error);
@@ -196,4 +234,4 @@ async function updateOrderStatus(orderId: string, status: string, orderData: any
             orderId
         };
     }
-} 
+}
